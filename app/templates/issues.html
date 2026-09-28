@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% from "_macros.html" import category_badge, severity_badge, status_badge, enum_select %}
+{% block title %}Issues{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Issues</h1>
+      <p class="subtitle">
+        {{ page.total }} issue{{ "" if page.total == 1 else "s" }}{% if filtered %} matching these filters{% endif %}, newest first
+      </p>
+    </div>
+    <a class="button" href="/issues/new">New issue</a>
+  </div>
+
+  {% if notice %}<div class="notice" role="status">{{ notice }}</div>{% endif %}
+  {% if filter_error %}<div class="notice notice-error" role="alert">{{ filter_error }}</div>{% endif %}
+
+  <form class="card filters" method="get" action="/issues" aria-label="Filter issues">
+    <div class="field">
+      <label for="clinic">Clinic</label>
+      <select id="clinic" name="clinic">
+        <option value="">All clinics</option>
+        {% for name in clinics %}
+          <option value="{{ name }}"{% if selected_clinic == name %} selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      {{ enum_select("category", "Category", categories, filters.category, "All categories") }}
+    </div>
+    <div class="field">
+      {{ enum_select("status", "Status", statuses, filters.status, "All statuses") }}
+    </div>
+    <div class="field">
+      {{ enum_select("severity", "Severity", severities, filters.severity, "All severities") }}
+    </div>
+    <div class="filter-actions">
+      <button class="button" type="submit">Apply filters</button>
+      <a href="/issues">Clear filters</a>
+    </div>
+  </form>
+
+  {% if page.items %}
+    <div class="card table-card">
+      <table class="issue-table">
+        <thead>
+          <tr>
+            <th scope="col">ID</th>
+            <th scope="col">Created</th>
+            <th scope="col">Call ID</th>
+            <th scope="col">Clinic</th>
+            <th scope="col">Category</th>
+            <th scope="col">Severity</th>
+            <th scope="col">Status</th>
+            <th scope="col">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for issue in page.items %}
+            <tr>
+              <td data-label="ID">#{{ issue.id }}</td>
+              <td data-label="Created">
+                <time datetime="{{ issue.created_at.isoformat() }}">{{ issue.created_at | local_time(tz) }}</time>
+              </td>
+              <td data-label="Call ID"><code>{{ issue.call_id }}</code></td>
+              <td data-label="Clinic">{{ issue.clinic_name }}</td>
+              <td data-label="Category">{{ category_badge(issue.category) }}</td>
+              <td data-label="Severity">{{ severity_badge(issue.severity) }}</td>
+              <td data-label="Status">
+                {{ status_badge(issue.status) }}
+                {% if issue.resolved_at %}
+                  <div class="muted small">
+                    <time datetime="{{ issue.resolved_at.isoformat() }}">{{ issue.resolved_at | local_time(tz) }}</time>
+                  </div>
+                {% endif %}
+              </td>
+              <td data-label="Description" class="description">{{ issue.description }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if page.pages > 1 %}
+      <nav class="pagination" aria-label="Pagination">
+        {% if page.page > 1 %}
+          <a class="button button-secondary" href="/issues?{{ page_query(page.page - 1) }}">Previous</a>
+        {% else %}<span></span>{% endif %}
+        <span class="muted">Page {{ page.page }} of {{ page.pages }}</span>
+        {% if page.page < page.pages %}
+          <a class="button button-secondary" href="/issues?{{ page_query(page.page + 1) }}">Next</a>
+        {% else %}<span></span>{% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <div class="card empty-state">
+      {% if filtered %}
+        <p>No issues match these filters.</p>
+        <a href="/issues">Clear filters</a>
+      {% else %}
+        <p>No issues yet.</p>
+        <a href="/issues/new">Record the first one</a>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endblock %}
