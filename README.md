@@ -258,6 +258,9 @@ every push to `develop`:
 
 - Authentication (company SSO) and roles, then CSRF tokens on forms.
 - An audit log / status history: who resolved or reopened what, and when.
+- Editing an issue after creation (today only the status changes, through resolve and
+  reopen). I left it out on purpose: edits should come with the audit log, so the
+  history of an issue cannot be rewritten silently.
 - Assignee and comments on issues.
 - Automatic issue creation from the call pipeline through the API or a webhook, with
   deduplication by `call_id`.
