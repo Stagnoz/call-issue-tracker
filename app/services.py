@@ -1,0 +1,132 @@
+"""Service layer: every database query and business rule lives here.
+
+Both the JSON API and the HTML pages call these functions, so the two
+interfaces cannot drift apart.
+"""
+
+import math
+from dataclasses import dataclass
+from datetime import UTC, datetime
+
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+from sqlalchemy.sql import Select
+
+from app.models import Clinic, Issue, Status
+from app.schemas import IssueCreate, IssueFilters
+
+PER_PAGE = 25
+
+
+@dataclass
+class Page:
+    items: list[Issue]
+    total: int
+    page: int
+    per_page: int
+
+    @property
+    def pages(self) -> int:
+        return max(1, math.ceil(self.total / self.per_page))
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def normalize_clinic_name(name: str) -> str:
+    """Trim and collapse inner whitespace: '  Centro   X ' -> 'Centro X'."""
+    return " ".join(name.split())
+
+
+def clinic_key(name: str) -> str:
+    """Comparison key that makes clinic names differing only by case or spacing equal."""
+    return normalize_clinic_name(name).casefold()
+
+
+def get_or_create_clinic(session: Session, name: str) -> Clinic:
+    display_name = normalize_clinic_name(name)
+    key = display_name.casefold()
+    clinic = session.scalar(select(Clinic).where(Clinic.name_key == key))
+    if clinic is None:
+        clinic = Clinic(name=display_name, name_key=key)
+        session.add(clinic)
+        session.flush()
+    return clinic
+
+
+def list_clinic_names(session: Session) -> list[str]:
+    return list(session.scalars(select(Clinic.name).order_by(Clinic.name_key)))
+
+
+def create_issue(session: Session, data: IssueCreate, now: datetime | None = None) -> Issue:
+    """Create an open issue. created_at always comes from the server clock."""
+    issue = Issue(
+        call_id=data.call_id,
+        clinic=get_or_create_clinic(session, data.clinic),
+        description=data.description,
+        category=data.category,
+        severity=data.severity,
+        status=Status.OPEN,
+        created_at=now or utc_now(),
+    )
+    session.add(issue)
+    session.commit()
+    return issue
+
+
+def _apply_filters(statement: Select, filters: IssueFilters) -> Select:
+    if filters.clinic is not None:
+        key = clinic_key(filters.clinic)
+        statement = statement.join(Issue.clinic).where(Clinic.name_key == key)
+    if filters.category is not None:
+        statement = statement.where(Issue.category == filters.category)
+    if filters.status is not None:
+        statement = statement.where(Issue.status == filters.status)
+    if filters.severity is not None:
+        statement = statement.where(Issue.severity == filters.severity)
+    return statement
+
+
+def list_issues(
+    session: Session, filters: IssueFilters, page: int = 1, per_page: int = PER_PAGE
+) -> Page:
+    """Issues matching all given filters, newest first, one page at a time."""
+    total = session.scalar(_apply_filters(select(func.count(Issue.id)), filters)) or 0
+    statement = (
+        _apply_filters(select(Issue), filters)
+        .order_by(Issue.created_at.desc(), Issue.id.desc())
+        .limit(per_page)
+        .offset((page - 1) * per_page)
+    )
+    items = list(session.scalars(statement))
+    return Page(items=items, total=total, page=page, per_page=per_page)
+
+
+def get_issue(session: Session, issue_id: int) -> Issue | None:
+    return session.get(Issue, issue_id)
+
+
+def resolve_issue(session: Session, issue_id: int, now: datetime | None = None) -> Issue | None:
+    """Mark an issue as resolved. Returns None if it does not exist.
+
+    Idempotent: resolving an already resolved issue changes nothing, so
+    resolved_at keeps the time of the first resolution.
+    """
+    issue = session.get(Issue, issue_id)
+    if issue is None:
+        return None
+    if issue.status != Status.RESOLVED:
+        issue.status = Status.RESOLVED
+        issue.resolved_at = now or utc_now()
+        session.commit()
+    return issue
+
+
+def database_is_reachable(session: Session) -> bool:
+    try:
+        session.execute(text("SELECT 1"))
+    except SQLAlchemyError:
+        return False
+    return True
