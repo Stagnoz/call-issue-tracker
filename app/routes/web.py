@@ -6,8 +6,8 @@ from typing import Annotated
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app import services
 from app.db import get_session
 from app.models import Category, Severity, Status
-from app.schemas import IssueFilters, IssueListParams
+from app.schemas import IssueCreate, IssueFilters, IssueListParams
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 
@@ -97,3 +97,76 @@ def issue_list(request: Request, session: SessionDep) -> HTMLResponse:
         "filter_error": filter_error,
     }
     return render(request, "issues.html", context, status_code=422 if filter_error else 200)
+
+
+def error_message(error: dict) -> str:
+    """Short, human message for one Pydantic validation error."""
+    kind = error["type"]
+    limits = error.get("ctx", {})
+    if kind == "string_too_short":
+        if not str(error.get("input", "")).strip():
+            return "This field is required."
+        return f"Must be at least {limits['min_length']} characters."
+    if kind == "string_too_long":
+        return f"Must be at most {limits['max_length']} characters."
+    if kind == "enum":
+        return "Choose one of the options."
+    return error["msg"]
+
+
+def form_errors(exc: ValidationError) -> dict[str, str]:
+    errors: dict[str, str] = {}
+    for error in exc.errors():
+        errors.setdefault(str(error["loc"][0]), error_message(error))
+    return errors
+
+
+def render_form(
+    request: Request,
+    session: Session,
+    values: dict[str, str],
+    errors: dict[str, str],
+    status_code: int = 200,
+) -> HTMLResponse:
+    context = {
+        "active": "new",
+        "values": values,
+        "errors": errors,
+        "clinics": services.list_clinic_names(session),
+        "categories": list(Category),
+        "severities": list(Severity),
+    }
+    return render(request, "issue_form.html", context, status_code=status_code)
+
+
+@router.get("/issues/new")
+def new_issue_form(request: Request, session: SessionDep) -> HTMLResponse:
+    return render_form(request, session, values={}, errors={})
+
+
+@router.post("/issues")
+def create_issue_from_form(
+    request: Request,
+    session: SessionDep,
+    call_id: Annotated[str, Form()] = "",
+    clinic: Annotated[str, Form()] = "",
+    description: Annotated[str, Form()] = "",
+    category: Annotated[str, Form()] = "",
+    severity: Annotated[str, Form()] = "",
+) -> Response:
+    values = {
+        "call_id": call_id,
+        "clinic": clinic,
+        "description": description,
+        "category": category,
+        "severity": severity,
+    }
+    try:
+        data = IssueCreate.model_validate(values)
+    except ValidationError as exc:
+        # Re-render with the errors next to their fields and the input preserved.
+        return render_form(request, session, values, form_errors(exc), status_code=422)
+
+    issue = services.create_issue(session, data)
+    # Post/Redirect/Get: reloading the list page cannot submit the form again.
+    return RedirectResponse(f"/issues?created={issue.id}", status_code=303)
