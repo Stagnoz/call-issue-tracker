@@ -185,6 +185,12 @@ main {
   margin-bottom: 1.25rem;
 }
 
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .subtitle {
   margin: 0.25rem 0 0;
   color: var(--text-muted);

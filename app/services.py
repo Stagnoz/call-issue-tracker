@@ -106,6 +106,9 @@ def _apply_filters(statement: Select, filters: IssueFilters) -> Select:
     return statement
 
 
+NEWEST_FIRST = (Issue.created_at.desc(), Issue.id.desc())
+
+
 def list_issues(
     session: Session, filters: IssueFilters, page: int = 1, per_page: int = PER_PAGE
 ) -> Page:
@@ -113,12 +116,18 @@ def list_issues(
     total = session.scalar(_apply_filters(select(func.count(Issue.id)), filters)) or 0
     statement = (
         _apply_filters(select(Issue), filters)
-        .order_by(Issue.created_at.desc(), Issue.id.desc())
+        .order_by(*NEWEST_FIRST)
         .limit(per_page)
         .offset((page - 1) * per_page)
     )
     items = list(session.scalars(statement))
     return Page(items=items, total=total, page=page, per_page=per_page)
+
+
+def list_all_issues(session: Session, filters: IssueFilters) -> list[Issue]:
+    """Every issue matching the filters, newest first, without pagination (CSV export)."""
+    statement = _apply_filters(select(Issue), filters).order_by(*NEWEST_FIRST)
+    return list(session.scalars(statement))
 
 
 def get_issue(session: Session, issue_id: int) -> Issue | None:

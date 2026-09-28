@@ -1,5 +1,7 @@
 """HTML pages. They call the same service functions as the JSON API."""
 
+import csv
+import io
 from collections.abc import Mapping
 from datetime import date, datetime
 from pathlib import Path
@@ -8,14 +10,14 @@ from urllib.parse import parse_qs, urlencode
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app import services
 from app.db import get_session
-from app.models import Category, Severity, Status
+from app.models import Category, Issue, Severity, Status
 from app.schemas import IssueCreate, IssueFilters, IssueListParams, ResolveRequest
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
@@ -125,6 +127,7 @@ def render_issue_list(
         "statuses": list(Status),
         "severities": list(Severity),
         "page_query": lambda number: filter_query(params, page=number),
+        "export_query": filter_query(params),
         "return_query": filter_query(params, page=params.page if params.page > 1 else None),
         "notice": list_notice(request),
         "filter_error": filter_error,
@@ -270,6 +273,70 @@ def reopen_issue_from_form(
     if issue is None:
         return issue_not_found(request, issue_id)
     return back_to_list(return_query, reopened=issue.id)
+
+
+CSV_COLUMNS = (
+    "id",
+    "created_at_utc",
+    "call_id",
+    "clinic",
+    "category",
+    "severity",
+    "status",
+    "resolved_at_utc",
+    "resolution_note",
+    "description",
+)
+
+
+def csv_cell(value: object) -> str:
+    text = "" if value is None else str(value)
+    # Spreadsheets run a cell that starts with one of these characters as a
+    # formula (CSV injection), so it is prefixed with a quote.
+    if text[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + text
+    return text
+
+
+def utc_text(value: datetime | None) -> str | None:
+    return value.strftime("%Y-%m-%d %H:%M:%S") if value else None
+
+
+def csv_row(issue: Issue) -> list[str]:
+    values = (
+        issue.id,
+        utc_text(issue.created_at),
+        issue.call_id,
+        issue.clinic_name,
+        issue.category,
+        issue.severity,
+        issue.status,
+        utc_text(issue.resolved_at),
+        issue.resolution_note,
+        issue.description,
+    )
+    return [csv_cell(value) for value in values]
+
+
+@router.get("/issues.csv")
+def export_issues_csv(request: Request, session: SessionDep) -> Response:
+    """The currently filtered list as a CSV file, all pages."""
+    params, filter_error = parse_list_params(request.query_params)
+    if filter_error:
+        return PlainTextResponse(filter_error, status_code=422)
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(CSV_COLUMNS)
+    writer.writerows(csv_row(issue) for issue in services.list_all_issues(session, params))
+
+    filename = f"issues-{services.utc_now():%Y%m%d}.csv"
+    return Response(
+        # The byte order mark tells Excel the file is UTF-8 (accents display correctly).
+        content="\ufeff" + buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/dashboard")

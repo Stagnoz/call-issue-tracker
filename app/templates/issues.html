@@ -9,7 +9,10 @@
         {{ page.total }} issue{{ "" if page.total == 1 else "s" }}{% if filtered %} matching these filters{% endif %}, newest first
       </p>
     </div>
-    <a class="button" href="/issues/new">New issue</a>
+    <div class="header-actions">
+      <a class="button button-secondary" href="/issues.csv{% if export_query %}?{{ export_query }}{% endif %}" download>Export CSV</a>
+      <a class="button" href="/issues/new">New issue</a>
+    </div>
   </div>
 
   {% if notice %}<div class="notice" role="status">{{ notice }}</div>{% endif %}
