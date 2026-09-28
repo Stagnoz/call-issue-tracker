@@ -3,16 +3,20 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.config import Settings, load_settings
 from app.db import init_db, make_engine, make_session_factory
-from app.routes import api
+from app.routes import api, web
 from app.seed import seed_if_empty
 
 # uvicorn's own logger, so startup messages appear in the container logs.
 logger = logging.getLogger("uvicorn.error")
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -43,4 +47,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.session_factory = session_factory
 
     app.include_router(api.router)
+    app.include_router(web.router)
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app

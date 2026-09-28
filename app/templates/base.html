@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %} · Call Issue Tracker</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="app-name" href="/issues"><span class="app-mark" aria-hidden="true"></span>Call Issue Tracker</a>
+      <nav aria-label="Main">
+        <a href="/issues"{% if active == "issues" %} aria-current="page"{% endif %}>Issues</a>
+        <a href="/issues/new"{% if active == "new" %} aria-current="page"{% endif %}>New issue</a>
+        <a href="/dashboard"{% if active == "dashboard" %} aria-current="page"{% endif %}>Dashboard</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

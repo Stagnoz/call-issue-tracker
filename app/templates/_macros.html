@@ -1,0 +1,21 @@
+{% macro category_badge(category) -%}
+  <span class="badge badge-category">{{ category.label }}</span>
+{%- endmacro %}
+
+{% macro severity_badge(severity) -%}
+  <span class="badge badge-{{ severity.value }}">{{ severity.label }}</span>
+{%- endmacro %}
+
+{% macro status_badge(status) -%}
+  <span class="badge badge-{{ status.value }}">{{ status.label }}</span>
+{%- endmacro %}
+
+{% macro enum_select(name, label, options, selected, all_label=None, invalid=False) -%}
+  <label for="{{ name }}">{{ label }}</label>
+  <select id="{{ name }}" name="{{ name }}"{% if invalid %} aria-invalid="true" aria-describedby="{{ name }}-error"{% endif %}>
+    <option value="">{{ all_label or "Choose..." }}</option>
+    {% for option in options %}
+      <option value="{{ option.value }}"{% if selected == option.value %} selected{% endif %}>{{ option.label }}</option>
+    {% endfor %}
+  </select>
+{%- endmacro %}
