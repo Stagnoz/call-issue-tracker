@@ -182,3 +182,124 @@ def test_seed_does_not_refill_a_database_whose_issues_are_all_deleted(session):
     services.delete_issue(session, issue.id, reason="Test issue.")
 
     assert seed_if_empty(session) == 0
+
+
+# HTML
+
+
+def test_every_issue_in_the_list_has_a_delete_form(client, sample_issues):
+    text = client.get("/issues").text
+
+    assert text.count('<details class="resolve delete-issue">') == len(sample_issues)
+    assert f'action="/issues/{sample_issues[1].id}/delete"' in text  # resolved too
+
+
+def test_delete_from_list_keeps_filters_and_offers_undo(client, sample_issues):
+    issue = sample_issues[0]
+
+    response = client.post(
+        f"/issues/{issue.id}/delete",
+        data={"reason": "Created by mistake.", "return_query": "clinic=Clinic Alpha&status=open"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == (
+        f"/issues?clinic=Clinic+Alpha&status=open&deleted={issue.id}"
+    )
+    page = client.get(response.headers["location"]).text
+    assert f"Issue #{issue.id} deleted." in page
+    assert f'action="/issues/{issue.id}/restore"' in page
+    assert issue.call_id not in page
+
+
+def test_undo_restores_the_issue_and_keeps_filters(client, sample_issues):
+    issue = sample_issues[0]
+    client.post(f"/issues/{issue.id}/delete", data={"reason": "Created by mistake."})
+
+    response = client.post(
+        f"/issues/{issue.id}/restore",
+        data={"return_query": "status=open"},
+        follow_redirects=False,
+    )
+
+    assert response.headers["location"] == f"/issues?status=open&restored={issue.id}"
+    page = client.get(response.headers["location"]).text
+    assert f"Issue #{issue.id} restored." in page
+    assert issue.call_id in page
+
+
+def test_delete_without_reason_in_form_is_rejected(client, session):
+    issue = make_issue(session)
+
+    response = client.post(
+        f"/issues/{issue.id}/delete", data={"reason": "", "return_query": "status=open"}
+    )
+
+    assert response.status_code == 422
+    assert f"Issue #{issue.id} was not deleted." in response.text
+    assert '<details class="resolve delete-issue" open>' in response.text
+    assert "This field is required." in response.text
+    assert '<option value="open" selected>' in response.text  # filters kept
+    assert client.get(f"/api/issues/{issue.id}").status_code == 200
+
+
+def test_invalid_reason_in_form_keeps_the_input(client, session):
+    issue = make_issue(session)
+    reason = "Patient wrote from mario@example.com"
+
+    response = client.post(f"/issues/{issue.id}/delete", data={"reason": reason})
+
+    assert response.status_code == 422
+    assert f'value="{reason}"' in response.text
+    assert "Remove personal data: this looks like an email address." in response.text
+
+
+def test_submitting_the_delete_form_twice_is_harmless(client, session):
+    issue = make_issue(session)
+    form = {"reason": "Duplicate of another issue."}
+
+    first = client.post(f"/issues/{issue.id}/delete", data=form, follow_redirects=False)
+    second = client.post(f"/issues/{issue.id}/delete", data=form, follow_redirects=False)
+
+    assert first.status_code == second.status_code == 303
+
+
+def test_delete_redirect_cannot_leave_the_app(client, session):
+    issue = make_issue(session)
+
+    response = client.post(
+        f"/issues/{issue.id}/delete",
+        data={"reason": "Duplicate issue.", "return_query": "next=https://example.com"},
+        follow_redirects=False,
+    )
+
+    assert response.headers["location"] == f"/issues?deleted={issue.id}"
+
+
+def test_delete_or_restore_unknown_issue_from_form_returns_404(client):
+    assert client.post("/issues/999/delete", data={"reason": "Duplicate."}).status_code == 404
+    assert client.post("/issues/999/restore").status_code == 404
+
+
+def test_mistyped_clinic_leaves_the_suggestions_once_its_issue_is_deleted(client, session):
+    make_issue(session, clinic="Clinic Alpha")
+    typo = make_issue(session, clinic="Clinic Alhpa")
+    assert '<option value="Clinic Alhpa">' in client.get("/issues/new").text
+
+    client.post(f"/issues/{typo.id}/delete", data={"reason": "Clinic name mistyped."})
+
+    form = client.get("/issues/new").text
+    assert '<option value="Clinic Alhpa">' not in form
+    assert '<option value="Clinic Alpha">' in form
+
+
+def test_delete_texts_are_translated(client, session):
+    issue = make_issue(session)
+    client.cookies.set("lang", "it")
+
+    client.post(f"/issues/{issue.id}/delete", data={"reason": "Doppione."})
+    page = client.get(f"/issues?deleted={issue.id}").text
+
+    assert f"Segnalazione #{issue.id} eliminata." in page
+    assert "Annulla</button>" in page
