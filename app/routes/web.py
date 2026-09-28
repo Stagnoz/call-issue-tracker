@@ -23,6 +23,7 @@ from app.schemas import (
     IssueCreate,
     IssueFilters,
     IssueListParams,
+    Period,
     ResolveRequest,
 )
 
@@ -380,14 +381,28 @@ def export_issues_csv(request: Request, session: SessionDep) -> Response:
 
 @router.get("/dashboard")
 def dashboard(request: Request, session: SessionDep) -> HTMLResponse:
-    stats = services.get_stats(session, tz=request.app.state.settings.timezone)
+    # Validated by hand, like the list filters: a bad value in a shared link
+    # shows the all-time dashboard with a message instead of a JSON error.
+    try:
+        period = Period(request.query_params.get("period") or Period.ALL)
+        period_error = False
+    except ValueError:
+        period, period_error = Period.ALL, True
+    now = services.utc_now()
+    tz = request.app.state.settings.timezone
+    stats = services.get_stats(session, now=now, tz=tz, period=period)
     context = {
         "active": "dashboard",
         "stats": stats,
+        "periods": list(Period),
+        "period_error": period_error,
+        # Used for "open for 3 d" in the needs-attention list.
+        "now": now,
         # Bars are scaled to the biggest bar in each chart (1 avoids dividing by zero).
         "category_max": max((row.count for row in stats.by_category), default=0) or 1,
         "clinic_max": max((row.count for row in stats.by_clinic), default=0) or 1,
         "severity_max": max((row.count for row in stats.open_by_severity), default=0) or 1,
+        "age_max": max((row.count for row in stats.open_by_age), default=0) or 1,
         "daily_max": max((row.count for row in stats.created_per_day), default=0) or 1,
     }
-    return render(request, "dashboard.html", context)
+    return render(request, "dashboard.html", context, status_code=422 if period_error else 200)

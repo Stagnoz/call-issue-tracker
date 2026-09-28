@@ -643,6 +643,128 @@ textarea:focus {
   gap: 1.25rem;
 }
 
+.card-wide {
+  grid-column: 1 / -1;
+}
+
+h3 {
+  color: var(--navy);
+  font-size: 1.05rem;
+  line-height: 1.25;
+  margin: 0 0 1rem;
+}
+
+.section-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  margin: 2rem 0 0.9rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.section-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.section-header p {
+  margin: 0;
+}
+
+.period-switch {
+  display: flex;
+  flex-wrap: wrap;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.period-switch a {
+  padding: 0.45rem 0.8rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--neutral);
+  text-decoration: none;
+  border-left: 1px solid var(--border);
+}
+
+.period-switch a:first-child {
+  border-left: 0;
+}
+
+.period-switch a:hover {
+  background: var(--sky);
+}
+
+.period-switch a[aria-current="true"] {
+  background: var(--navy);
+  color: #ffffff;
+}
+
+.delta {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.delta-good {
+  color: var(--success);
+}
+
+.delta-bad {
+  color: var(--danger);
+}
+
+.attention-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.attention-list li {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--border-soft);
+}
+
+.attention-list li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.attention-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: -0.6rem 0 0.9rem;
+}
+
+.swatch {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 3px;
+  background: var(--brand);
+}
+
+.swatch-resolved {
+  margin-left: 0.6rem;
+  background: var(--success-border);
+}
+
 .bars {
   list-style: none;
   margin: 0;
@@ -659,10 +781,21 @@ textarea:focus {
 }
 
 .bar-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.5rem;
   overflow-wrap: anywhere;
 }
 
+.bar-open {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* The fills sit side by side (open, then resolved); the track rounds the ends. */
 .bar-track {
+  display: flex;
   height: 0.8rem;
   background: var(--sky);
   border: 1px solid var(--sky-border);
@@ -673,7 +806,14 @@ textarea:focus {
 .bar-fill {
   height: 100%;
   background: var(--brand);
-  border-radius: 999px;
+}
+
+.bar-fill-resolved {
+  background: var(--success-border);
+}
+
+.bar-fill-age {
+  background: var(--navy);
 }
 
 .bar-fill-critical {
@@ -701,6 +841,11 @@ textarea:focus {
   padding: 0;
   list-style: none;
   border-bottom: 1px solid var(--sky-border);
+}
+
+/* 90 bars: thinner gaps so they still fit on a phone. */
+.daily-chart-dense {
+  gap: 1px;
 }
 
 .daily-chart li {
@@ -741,7 +886,14 @@ textarea:focus {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .stat-grid .stat:last-child {
+  .period-switch {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: 100%;
+    text-align: center;
+  }
+
+  .stat-grid .stat:last-child:nth-child(odd) {
     grid-column: 1 / -1;
   }
 

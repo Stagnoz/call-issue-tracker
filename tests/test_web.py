@@ -167,7 +167,8 @@ def test_dashboard_page(client, sample_issues):
     text = response.text
 
     assert response.status_code == 200
-    assert re.findall(r'<span class="stat-value">(\d+)</span>', text) == ["8", "6", "3", "2"]
+    # Backlog first (open, open critical or high), then the period (total, resolved).
+    assert re.findall(r'<span class="stat-value">(\d+)</span>', text) == ["6", "3", "8", "2"]
     assert "Patient identification" in text  # a category with zero issues still appears
     assert "Clinic Gamma" in text
     assert "width: 100.0%" in text
