@@ -32,6 +32,12 @@
       <span class="stat-label">Resolved</span>
       <span class="stat-value">{{ stats.resolved }}</span>
     </p>
+    <p class="card stat">
+      <span class="stat-label">Median time to resolution</span>
+      <span class="stat-value">
+        {% if stats.median_resolution_hours is not none %}{{ stats.median_resolution_hours | duration }}{% else %}-{% endif %}
+      </span>
+    </p>
   </div>
 
   <div class="dashboard-grid">

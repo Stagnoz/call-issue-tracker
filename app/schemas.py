@@ -106,6 +106,22 @@ class IssueCreate(BaseModel):
         return reject_personal_data(value)
 
 
+class ResolveRequest(BaseModel):
+    """Optional body when resolving: a short note on what was fixed."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    note: str | None = Field(default=None, max_length=500)
+
+    @field_validator("note")
+    @classmethod
+    def check_note(cls, value: str | None) -> str | None:
+        if not value:
+            return None
+        reject_invisible_characters(value)
+        return reject_personal_data(value)
+
+
 class IssueFilters(BaseModel):
     """Optional list filters. They combine with AND; an empty value means no filter."""
 
@@ -145,6 +161,7 @@ class IssueOut(BaseModel):
     status: Status
     created_at: datetime
     resolved_at: datetime | None
+    resolution_note: str | None
 
 
 class IssuePage(BaseModel):
@@ -172,5 +189,7 @@ class Stats(BaseModel):
     total: int
     open: int
     resolved: int
+    # Median of (resolved_at - created_at) over resolved issues; None if there are none.
+    median_resolution_hours: float | None
     by_category: list[CategoryCount]
     by_clinic: list[ClinicCount]

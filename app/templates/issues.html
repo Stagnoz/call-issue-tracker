@@ -14,6 +14,9 @@
 
   {% if notice %}<div class="notice" role="status">{{ notice }}</div>{% endif %}
   {% if filter_error %}<div class="notice notice-error" role="alert">{{ filter_error }}</div>{% endif %}
+  {% if note_error %}
+    <div class="notice notice-error" role="alert">Issue #{{ note_error.issue_id }} was not resolved. Please fix the note.</div>
+  {% endif %}
 
   <form class="card filters" method="get" action="/issues" aria-label="Filter issues">
     <div class="field">
@@ -69,13 +72,31 @@
               <td data-label="Status">
                 <div class="status-cell">
                   {{ status_badge(issue.status) }}
-                  {% if issue.resolved_at %}
+                  {% if issue.status == "resolved" %}
                     <time class="muted small nowrap" datetime="{{ issue.resolved_at.isoformat() }}">{{ issue.resolved_at | local_time(tz) }}</time>
-                  {% else %}
-                    <form method="post" action="/issues/{{ issue.id }}/resolve">
+                    {% if issue.resolution_note %}
+                      <p class="resolution-note">{{ issue.resolution_note }}</p>
+                    {% endif %}
+                    <form method="post" action="/issues/{{ issue.id }}/reopen">
                       <input type="hidden" name="return_query" value="{{ return_query }}">
-                      <button class="button button-small button-secondary" type="submit">Mark as resolved</button>
+                      <button class="link-button" type="submit">Reopen</button>
                     </form>
+                  {% else %}
+                    {% set failed = note_error and note_error.issue_id == issue.id %}
+                    <details class="resolve"{% if failed %} open{% endif %}>
+                      <summary class="button button-small button-secondary">Mark as resolved</summary>
+                      <form class="resolve-form" method="post" action="/issues/{{ issue.id }}/resolve">
+                        <input type="hidden" name="return_query" value="{{ return_query }}">
+                        <label for="note-{{ issue.id }}">What was fixed? (optional)</label>
+                        <input id="note-{{ issue.id }}" name="note" maxlength="500"
+                               value="{{ note_error.value if failed else '' }}"
+                               {% if failed %}aria-invalid="true" aria-describedby="note-{{ issue.id }}-error"{% endif %}>
+                        {% if failed %}
+                          <p class="field-error" id="note-{{ issue.id }}-error">{{ note_error.message }}</p>
+                        {% endif %}
+                        <button class="button button-small" type="submit">Resolve</button>
+                      </form>
+                    </details>
                   {% endif %}
                 </div>
               </td>

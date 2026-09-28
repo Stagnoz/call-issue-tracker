@@ -74,6 +74,8 @@ class Issue(Base):
     status: Mapped[Status] = mapped_column(_enum_type(Status), default=Status.OPEN)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime())
     resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    # Optional "what was fixed" note, set when resolving and cleared on reopen.
+    resolution_note: Mapped[str | None] = mapped_column(String(500))
 
     # Every view of an issue shows its clinic, so load it in the same query.
     clinic: Mapped[Clinic] = relationship(back_populates="issues", lazy="joined")

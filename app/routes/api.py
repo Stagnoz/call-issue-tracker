@@ -10,7 +10,14 @@ from sqlalchemy.orm import Session
 from app import services
 from app.db import get_session
 from app.models import Issue
-from app.schemas import IssueCreate, IssueListParams, IssueOut, IssuePage, Stats
+from app.schemas import (
+    IssueCreate,
+    IssueListParams,
+    IssueOut,
+    IssuePage,
+    ResolveRequest,
+    Stats,
+)
 
 router = APIRouter()
 
@@ -65,12 +72,30 @@ def get_issue(issue_id: int, session: SessionDep) -> Issue:
     response_model=IssueOut,
     tags=["issues"],
     summary="Mark an issue as resolved",
-    description="Sets status to resolved and records resolved_at. Idempotent: resolving an "
-    "already resolved issue returns it unchanged.",
+    description="Sets status to resolved and records resolved_at. The body is optional: "
+    '{"note": "what was fixed"}. Idempotent: resolving an already resolved issue returns it '
+    "unchanged, keeping the first resolution time and note.",
     responses={404: {"description": "Issue not found"}},
 )
-def resolve_issue(issue_id: int, session: SessionDep) -> Issue:
-    issue = services.resolve_issue(session, issue_id)
+def resolve_issue(issue_id: int, session: SessionDep, data: ResolveRequest | None = None) -> Issue:
+    note = data.note if data else None
+    issue = services.resolve_issue(session, issue_id, note=note)
+    if issue is None:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    return issue
+
+
+@router.post(
+    "/api/issues/{issue_id}/reopen",
+    response_model=IssueOut,
+    tags=["issues"],
+    summary="Reopen a resolved issue",
+    description="Sets status back to open and clears resolved_at and the resolution note. "
+    "Reopening an open issue returns it unchanged.",
+    responses={404: {"description": "Issue not found"}},
+)
+def reopen_issue(issue_id: int, session: SessionDep) -> Issue:
+    issue = services.reopen_issue(session, issue_id)
     if issue is None:
         raise HTTPException(status_code=404, detail="Issue not found")
     return issue

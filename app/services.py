@@ -5,6 +5,7 @@ interfaces cannot drift apart.
 """
 
 import math
+import statistics
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -108,11 +109,14 @@ def get_issue(session: Session, issue_id: int) -> Issue | None:
     return session.get(Issue, issue_id)
 
 
-def resolve_issue(session: Session, issue_id: int, now: datetime | None = None) -> Issue | None:
-    """Mark an issue as resolved. Returns None if it does not exist.
+def resolve_issue(
+    session: Session, issue_id: int, now: datetime | None = None, note: str | None = None
+) -> Issue | None:
+    """Mark an issue as resolved, with an optional note on what was fixed.
+    Returns None if the issue does not exist.
 
     Idempotent: resolving an already resolved issue changes nothing, so
-    resolved_at keeps the time of the first resolution.
+    resolved_at and the note keep the values of the first resolution.
     """
     issue = session.get(Issue, issue_id)
     if issue is None:
@@ -120,6 +124,22 @@ def resolve_issue(session: Session, issue_id: int, now: datetime | None = None) 
     if issue.status != Status.RESOLVED:
         issue.status = Status.RESOLVED
         issue.resolved_at = now or utc_now()
+        issue.resolution_note = note
+        session.commit()
+    return issue
+
+
+def reopen_issue(session: Session, issue_id: int) -> Issue | None:
+    """Move a resolved issue back to open, clearing resolved_at and the note.
+    Returns None if the issue does not exist. Reopening an open issue changes nothing.
+    """
+    issue = session.get(Issue, issue_id)
+    if issue is None:
+        return None
+    if issue.status != Status.OPEN:
+        issue.status = Status.OPEN
+        issue.resolved_at = None
+        issue.resolution_note = None
         session.commit()
     return issue
 
@@ -158,10 +178,21 @@ def get_stats(session: Session) -> Stats:
     by_clinic = [ClinicCount(clinic=name, count=count) for name, count in clinic_rows]
     by_clinic.sort(key=lambda item: (-item.count, item.clinic.casefold()))
 
+    # SQLite has no MEDIAN function, so the durations are computed here.
+    resolved_rows = session.execute(
+        select(Issue.created_at, Issue.resolved_at).where(Issue.status == Status.RESOLVED)
+    )
+    hours_to_resolve = [
+        (resolved_at - created_at).total_seconds() / 3600
+        for created_at, resolved_at in resolved_rows
+    ]
+    median_hours = statistics.median(hours_to_resolve) if hours_to_resolve else None
+
     return Stats(
         total=total,
         open=open_count,
         resolved=total - open_count,
+        median_resolution_hours=median_hours,
         by_category=by_category,
         by_clinic=by_clinic,
     )

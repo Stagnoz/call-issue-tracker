@@ -1,5 +1,6 @@
 """HTML pages. They call the same service functions as the JSON API."""
 
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session
 from app import services
 from app.db import get_session
 from app.models import Category, Severity, Status
-from app.schemas import IssueCreate, IssueFilters, IssueListParams
+from app.schemas import IssueCreate, IssueFilters, IssueListParams, ResolveRequest
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 
@@ -28,7 +29,20 @@ def local_time(value: datetime, tz: ZoneInfo) -> str:
     return f"{local.day} {local:%b %Y, %H:%M}"
 
 
+def duration(hours: float) -> str:
+    """Readable duration: '45 min', '20 h', '2 d 4 h'."""
+    minutes = round(hours * 60)
+    if minutes < 60:
+        return f"{minutes} min"
+    whole_hours = round(hours)
+    if whole_hours < 48:
+        return f"{whole_hours} h"
+    days, rest = divmod(whole_hours, 24)
+    return f"{days} d {rest} h" if rest else f"{days} d"
+
+
 templates.env.filters["local_time"] = local_time
+templates.env.filters["duration"] = duration
 
 # HTML pages are not part of the API, so they stay out of /docs.
 router = APIRouter(include_in_schema=False)
@@ -57,24 +71,36 @@ def filter_query(filters: IssueFilters, **extra: object) -> str:
 
 def list_notice(request: Request) -> str | None:
     """Confirmation message after a Post/Redirect/Get, e.g. ?created=42."""
-    for key, message in (("created", "Issue #{} created."), ("resolved", "Issue #{} resolved.")):
+    messages = (
+        ("created", "Issue #{} created."),
+        ("resolved", "Issue #{} resolved."),
+        ("reopened", "Issue #{} reopened."),
+    )
+    for key, message in messages:
         value = request.query_params.get(key, "")
         if value.isdigit():
             return message.format(value)
     return None
 
 
-@router.get("/issues")
-def issue_list(request: Request, session: SessionDep) -> HTMLResponse:
-    # Validated by hand (not as a FastAPI query model) so that a bad value in a
-    # shared link shows the page with a message instead of a JSON error.
-    filter_error = None
+def parse_list_params(query: Mapping[str, str]) -> tuple[IssueListParams, str | None]:
+    """Filters and page from a query string. Invalid values fall back to no
+    filters plus a message, so a bad shared link still opens the page."""
     try:
-        params = IssueListParams.model_validate(dict(request.query_params))
+        return IssueListParams.model_validate(dict(query)), None
     except ValidationError:
-        params = IssueListParams()
-        filter_error = "Some filter values in this link are not valid, so no filters are applied."
+        message = "Some filter values in this link are not valid, so no filters are applied."
+        return IssueListParams(), message
 
+
+def render_issue_list(
+    request: Request,
+    session: Session,
+    params: IssueListParams,
+    filter_error: str | None = None,
+    note_error: dict | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
     page = services.list_issues(session, params, page=params.page)
     clinics = services.list_clinic_names(session)
     selected_clinic = None
@@ -96,8 +122,18 @@ def issue_list(request: Request, session: SessionDep) -> HTMLResponse:
         "return_query": filter_query(params, page=params.page if params.page > 1 else None),
         "notice": list_notice(request),
         "filter_error": filter_error,
+        "note_error": note_error,
     }
-    return render(request, "issues.html", context, status_code=422 if filter_error else 200)
+    return render(request, "issues.html", context, status_code=status_code)
+
+
+@router.get("/issues")
+def issue_list(request: Request, session: SessionDep) -> HTMLResponse:
+    # Validated by hand (not as a FastAPI query model) so that a bad value in a
+    # shared link shows the page with a message instead of a JSON error.
+    params, filter_error = parse_list_params(request.query_params)
+    status_code = 422 if filter_error else 200
+    return render_issue_list(request, session, params, filter_error, status_code=status_code)
 
 
 def error_message(error: dict) -> str:
@@ -173,24 +209,61 @@ def create_issue_from_form(
     return RedirectResponse(f"/issues?created={issue.id}", status_code=303)
 
 
+def kept_list_query(return_query: str) -> list[tuple[str, str]]:
+    """The list filters and page from a submitted return_query, known keys only."""
+    submitted = parse_qs(return_query)
+    return [(key, submitted[key][0]) for key in (*FILTER_FIELDS, "page") if key in submitted]
+
+
+def back_to_list(return_query: str, **message: int) -> RedirectResponse:
+    # Back to the same filtered list. The query is rebuilt from known keys only
+    # and the path is fixed, so the form cannot redirect anywhere else.
+    query = urlencode([*kept_list_query(return_query), *message.items()])
+    return RedirectResponse(f"/issues?{query}", status_code=303)
+
+
+def issue_not_found(request: Request, issue_id: int) -> HTMLResponse:
+    context = {"message": f"Issue #{issue_id} does not exist."}
+    return render(request, "not_found.html", context, status_code=404)
+
+
 @router.post("/issues/{issue_id}/resolve")
 def resolve_issue_from_form(
     request: Request,
     issue_id: int,
     session: SessionDep,
     return_query: Annotated[str, Form()] = "",
+    note: Annotated[str, Form()] = "",
 ) -> Response:
-    issue = services.resolve_issue(session, issue_id)
-    if issue is None:
-        context = {"message": f"Issue #{issue_id} does not exist."}
-        return render(request, "not_found.html", context, status_code=404)
+    try:
+        data = ResolveRequest(note=note)
+    except ValidationError as exc:
+        # Show the same list again, with the note form open, the error and the input.
+        params, _ = parse_list_params(dict(kept_list_query(return_query)))
+        note_error = {
+            "issue_id": issue_id,
+            "message": error_message(exc.errors()[0]),
+            "value": note,
+        }
+        return render_issue_list(request, session, params, note_error=note_error, status_code=422)
 
-    # Back to the same filtered list. The query is rebuilt from known keys only
-    # and the path is fixed, so the form cannot redirect anywhere else.
-    submitted = parse_qs(return_query)
-    kept = [(key, submitted[key][0]) for key in (*FILTER_FIELDS, "page") if key in submitted]
-    query = urlencode([*kept, ("resolved", issue.id)])
-    return RedirectResponse(f"/issues?{query}", status_code=303)
+    issue = services.resolve_issue(session, issue_id, note=data.note)
+    if issue is None:
+        return issue_not_found(request, issue_id)
+    return back_to_list(return_query, resolved=issue.id)
+
+
+@router.post("/issues/{issue_id}/reopen")
+def reopen_issue_from_form(
+    request: Request,
+    issue_id: int,
+    session: SessionDep,
+    return_query: Annotated[str, Form()] = "",
+) -> Response:
+    issue = services.reopen_issue(session, issue_id)
+    if issue is None:
+        return issue_not_found(request, issue_id)
+    return back_to_list(return_query, reopened=issue.id)
 
 
 @router.get("/dashboard")

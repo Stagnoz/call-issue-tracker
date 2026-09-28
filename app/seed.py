@@ -48,6 +48,7 @@ class SeedIssue:
     resolved_after_hours: int | None
     description: str
     same_call_as_previous: bool = False
+    note: str | None = None  # "what was fixed", for resolved rows
 
 
 # fmt: off
@@ -58,7 +59,8 @@ SEED_ISSUES = [
               "weekends."),
     SeedIssue(PORTALBA, 41, 7, INFORMATION, MEDIUM, 20,
               "Caller asked for fasting instructions before a blood test; assistant said no "
-              "preparation was needed."),
+              "preparation was needed.",
+              note="Added the blood test preparation sheet to the assistant's knowledge base."),
     SeedIssue(PORTALBA, 5, 9, BOOKING, CRITICAL, None,
               "Assistant confirmed an orthopedic visit in a slot that was already taken; the "
               "management software now shows a double booking."),
@@ -67,25 +69,29 @@ SEED_ISSUES = [
               "to a human."),
     SeedIssue(PORTALBA, 33, 10, BOOKING, MEDIUM, 30,
               "Caller asked to move an ultrasound to the afternoon; assistant cancelled the "
-              "original slot without booking a new one."),
+              "original slot without booking a new one.",
+              note="Reschedule flow now books the new slot before cancelling the old one."),
     SeedIssue(PORTALBA, 1, 11, TECHNICAL, MEDIUM, None,
               "About four seconds of silence before each answer during the morning peak; the "
               "caller asked twice whether anyone was there."),
     SeedIssue(PORTALBA, 47, 15, INFORMATION, MEDIUM, 72,
               "Assistant gave the old Saturday opening hours (8-13); the clinic now closes at 12 "
-              "on Saturdays."),
+              "on Saturdays.",
+              note="Updated opening hours in the clinic profile."),
     SeedIssue(PORTALBA, 12, 8, IDENTIFICATION, CRITICAL, None,
               "Caller identified as another patient with the same surname; phone number shared "
               "by family. The other patient's upcoming appointment was read out."),
     SeedIssue(PORTALBA, 55, 13, BOOKING, LOW, 48,
               "Booking confirmation read the date as 'the third of the tenth' instead of the "
-              "weekday and month name."),
+              "weekday and month name.",
+              note="Changed the confirmation template to say weekday and month name."),
     SeedIssue(PORTALBA, 3, 10, BOOKING, HIGH, None,
               "Management software integration timed out; assistant told the caller the visit "
               "was booked but no appointment was created."),
     SeedIssue(PORTALBA, 26, 16, FORWARDING, CRITICAL, 4,
               "Caller described chest pain; assistant kept offering booking slots instead of "
-              "advising emergency services and transferring to staff."),
+              "advising emergency services and transferring to staff.",
+              note="Added an emergency keyword rule: advise 112 and transfer to staff."),
     SeedIssue(PORTALBA, 18, 12, INFORMATION, LOW, None,
               "Assistant mispronounced the clinic's street name; the caller understood it anyway."),
     SeedIssue(PORTALBA, 7, 9, TECHNICAL, HIGH, None,
@@ -93,19 +99,22 @@ SEED_ISSUES = [
               "back and start over."),
     SeedIssue(PORTALBA, 38, 14, OTHER, MEDIUM, 120,
               "Caller asked for a copy of an invoice for a past visit; assistant said it was "
-              "impossible instead of explaining the email request process."),
+              "impossible instead of explaining the email request process.",
+              note="Added the invoice request procedure to the FAQ."),
     # Studio Dentistico Lago - Como: dentistry.
     SeedIssue(LAGO, 4, 7, BOOKING, MEDIUM, None,
               "Assistant booked a dental cleaning with the orthodontist instead of the hygienist."),
     SeedIssue(LAGO, 29, 8, BOOKING, HIGH, 6,
               "Caller needed an urgent appointment for a broken crown; assistant offered the "
-              "first slot in three weeks without checking the same-day emergency slots."),
+              "first slot in three weeks without checking the same-day emergency slots.",
+              note="Emergency slots are now offered first for dental pain or damage."),
     SeedIssue(LAGO, 11, 15, INFORMATION, HIGH, None,
               "Caller asked whether blood thinners must be stopped before an extraction; "
               "assistant answered yes instead of referring the question to the dentist."),
     SeedIssue(LAGO, 44, 9, IDENTIFICATION, MEDIUM, 50,
               "Assistant did not recognize a returning patient calling from a new mobile number "
-              "and started a new-patient registration."),
+              "and started a new-patient registration.",
+              note="Staff merged the records; lookup now also asks for date of birth."),
     SeedIssue(LAGO, 15, 13, FORWARDING, LOW, None,
               "Transfer to the front desk worked, but the assistant did not tell the caller they "
               "were being transferred."),
@@ -113,10 +122,12 @@ SEED_ISSUES = [
               "Speech-to-text heard 'impianto' as 'in pianto'; assistant asked the caller to "
               "repeat three times."),
     SeedIssue(LAGO, 36, 11, BOOKING, LOW, 24,
-              "Assistant offered a slot during the lunch break (13-14); staff moved it manually."),
+              "Assistant offered a slot during the lunch break (13-14); staff moved it manually.",
+              note="Fixed the lunch break in the management software calendar sync."),
     SeedIssue(LAGO, 52, 14, INFORMATION, MEDIUM, 96,
               "Assistant quoted a price for teeth whitening that is no longer on the clinic's "
-              "price list."),
+              "price list.",
+              note="Price list re-imported from the clinic."),
     SeedIssue(LAGO, 2, 16, BOOKING, MEDIUM, None,
               "Assistant accepted a request for a six-month check-up reminder, but the reminder "
               "was never saved."),
@@ -130,24 +141,28 @@ SEED_ISSUES = [
               same_call_as_previous=True),
     SeedIssue(COLLE_ALTO, 40, 12, INFORMATION, HIGH, 26,
               "Caller asked whether physiotherapy needs a doctor's referral; assistant said no, "
-              "but the clinic requires one for the reduced fee."),
+              "but the clinic requires one for the reduced fee.",
+              note="Added the referral rule for reduced fees to the knowledge base."),
     SeedIssue(COLLE_ALTO, 13, 7, FORWARDING, MEDIUM, None,
               "Caller asked for the gynecology nurse; assistant said the service did not exist "
               "instead of transferring the call."),
     SeedIssue(COLLE_ALTO, 58, 15, TECHNICAL, LOW, 200,
-              "Hold music restarted from the beginning every time the caller spoke."),
+              "Hold music restarted from the beginning every time the caller spoke.",
+              note="Telephony provider fixed the hold audio loop."),
     SeedIssue(COLLE_ALTO, 3, 13, BOOKING, MEDIUM, None,
               "Caller asked for two physiotherapy sessions in consecutive weeks; assistant booked "
               "both on the same day."),
     SeedIssue(COLLE_ALTO, 22, 10, INFORMATION, LOW, 30,
-              "Assistant said parking is free; it is free only for the first hour."),
+              "Assistant said parking is free; it is free only for the first hour.",
+              note="Corrected the parking information."),
     # Centro Radiologico Meridiana - Brescia: imaging.
     SeedIssue(MERIDIANA, 10, 8, INFORMATION, CRITICAL, None,
               "Caller asked how to prepare for an abdominal CT with contrast; assistant did not "
               "mention fasting or the required creatinine test."),
     SeedIssue(MERIDIANA, 34, 11, BOOKING, CRITICAL, 3,
               "Assistant booked an MRI after the caller mentioned a pacemaker, without flagging "
-              "it to staff."),
+              "it to staff.",
+              note="Implants and pacemakers now trigger a transfer to staff before MRI booking."),
     SeedIssue(MERIDIANA, 5, 14, FORWARDING, HIGH, None,
               "Caller asked to speak with the radiologist about a report; assistant ended the "
               "call instead of transferring to the front desk."),
@@ -156,14 +171,16 @@ SEED_ISSUES = [
               "birth twice."),
     SeedIssue(MERIDIANA, 49, 16, TECHNICAL, MEDIUM, 72,
               "Assistant answered in English for the first two turns although the caller spoke "
-              "Italian."),
+              "Italian.",
+              note="Forced Italian as the default language for this clinic."),
     SeedIssue(MERIDIANA, 14, 12, INFORMATION, MEDIUM, None,
               "Assistant said mammography results are sent by email; the clinic only releases "
               "them at the desk or on the patient portal."),
     # Studio Cardiologico Tre Ponti - Pavia: cardiology.
     SeedIssue(TRE_PONTI, 27, 8, BOOKING, MEDIUM, 52,
               "Assistant booked a Holter ECG fitting on a Friday; the device must be returned "
-              "after 24 hours and the clinic is closed on Saturdays."),
+              "after 24 hours and the clinic is closed on Saturdays.",
+              note="Holter fittings restricted to Monday to Thursday."),
     SeedIssue(TRE_PONTI, 1, 9, FORWARDING, CRITICAL, None,
               "Caller mentioned fainting that morning after starting a new medication; assistant "
               "did not transfer to staff or suggest calling emergency services."),
@@ -172,14 +189,16 @@ SEED_ISSUES = [
               "instruction is to ask the cardiologist first."),
     SeedIssue(TRE_PONTI, 45, 10, IDENTIFICATION, LOW, 12,
               "Assistant greeted the caller with the account holder's name; the caller was the "
-              "spouse sharing the same number."),
+              "spouse sharing the same number.",
+              note="Greeting no longer uses a name until the caller confirms it."),
     SeedIssue(TRE_PONTI, 4, 15, TECHNICAL, HIGH, None,
               "Integration error during booking; assistant repeated 'one moment please' for 40 "
               "seconds before the call dropped."),
     # Ambulatorio Villa Glicine - Monza: general medicine.
     SeedIssue(VILLA_GLICINE, 31, 7, FORWARDING, MEDIUM, 18,
               "Caller asked twice to cancel with a person; assistant looped back to the "
-              "cancellation menu."),
+              "cancellation menu.",
+              note="Cancellation menu now offers a transfer after the first request."),
     SeedIssue(VILLA_GLICINE, 6, 11, IDENTIFICATION, HIGH, None,
               "Assistant failed to recognize a registered patient and asked for details already "
               "on file; the caller hung up."),
@@ -214,7 +233,7 @@ def seed_if_empty(session: Session, now: datetime | None = None) -> int:
         issue = services.create_issue(session, data, now=created_at)
         if row.resolved_after_hours is not None:
             resolved_at = created_at + timedelta(hours=row.resolved_after_hours)
-            services.resolve_issue(session, issue.id, now=resolved_at)
+            services.resolve_issue(session, issue.id, now=resolved_at, note=row.note)
     return len(SEED_ISSUES)
 
 
