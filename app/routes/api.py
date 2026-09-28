@@ -3,7 +3,8 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from app import services
@@ -97,3 +98,15 @@ def health(session: SessionDep) -> JSONResponse:
     if services.database_is_reachable(session):
         return JSONResponse({"status": "ok"})
     return JSONResponse({"status": "unavailable"}, status_code=503)
+
+
+@router.get("/docs", include_in_schema=False)
+def api_docs() -> HTMLResponse:
+    """Swagger UI from files shipped with the app, so it works without internet access."""
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title="Call Issue Tracker - API docs",
+        swagger_js_url="/static/swagger-ui/swagger-ui-bundle.js",
+        swagger_css_url="/static/swagger-ui/swagger-ui.css",
+        swagger_favicon_url="data:,",
+    )

@@ -42,6 +42,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version="1.0.0",
         description="Record and analyze issues found in AI assistant phone calls.",
         lifespan=lifespan,
+        # /docs is served by the API router with local Swagger UI files; the
+        # defaults would load them (and ReDoc) from a CDN.
+        docs_url=None,
+        redoc_url=None,
     )
     app.state.settings = settings
     app.state.session_factory = session_factory
