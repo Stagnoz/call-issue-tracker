@@ -37,9 +37,14 @@ is needed.
 - **New issue** (`/issues/new`): call ID, clinic (pick an existing one or type a new
   name), category, severity and description. Invalid input is shown next to the
   field, with what you typed preserved.
-- **Dashboard** (`/dashboard`): total, open, open critical or high, resolved, median
-  time to resolution; open issues by severity; issues created per day over the last
-  30 days; issues by category and by clinic. Every bar links to the matching list.
+- **Dashboard** (`/dashboard`), in two parts. **Right now** is the open backlog,
+  whatever the period: open and open critical or high counts, the five oldest open
+  critical/high issues with how long they have been open, and open issues by
+  severity and by age. The **period** part (last 7, 30 or 90 days, or all time, the
+  default) shows new and resolved issues with the change against the previous
+  period, the median time to resolution, issues created per day, and issues by
+  category and by clinic, each bar split into open and resolved. Bars link to the
+  matching list (the list itself has no date filter).
 - **EN / IT** in the top bar switches the interface language.
 - **API docs** (`/docs`): interactive documentation of the JSON API.
 
@@ -163,7 +168,7 @@ with the list of errors. The API is always in English.
 | `POST` | `/api/issues/{id}/reopen` | Back to open; clears `resolved_at` and the note. Idempotent. |
 | `POST` | `/api/issues/{id}/delete` | Soft delete. Required body `{"reason": "..."}`; returns 204. The issue is hidden (GET returns 404) but kept. Idempotent: the first reason is kept. |
 | `POST` | `/api/issues/{id}/restore` | Undo a delete; the issue comes back unchanged. Idempotent. |
-| `GET` | `/api/stats` | Dashboard numbers. |
+| `GET` | `/api/stats` | Dashboard numbers. Query: `period` = `7`, `30`, `90` or `all` (default). |
 | `GET` | `/health` | `{"status": "ok"}` after a `SELECT 1`; 503 if the database is unreachable. |
 
 HTML-only routes: `/issues`, `/issues/new`, `/issues.csv`, `/dashboard`, and the
