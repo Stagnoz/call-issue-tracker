@@ -28,13 +28,23 @@ class IssueFilters(BaseModel):
     status: Status | None = None
     severity: Severity | None = None
 
-    @field_validator("*", mode="before")
+    @field_validator("clinic", "category", "status", "severity", mode="before")
     @classmethod
     def empty_means_no_filter(cls, value: object) -> object:
         # A form submitted with "All" selected sends ?category= ; treat it as unset.
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+
+class IssueListParams(IssueFilters):
+    """Query string of the issue list: the filters plus the page number.
+
+    FastAPI reads a query-parameter model only when it is the sole query
+    parameter, so the page number lives here rather than as a separate argument.
+    """
+
+    page: int = Field(default=1, ge=1)
 
 
 class IssueOut(BaseModel):
