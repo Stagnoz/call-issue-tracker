@@ -50,6 +50,7 @@ def create_issue(data: IssueCreate, session: SessionDep) -> Issue:
     tags=["issues"],
     summary="List issues, newest first",
     description="Filters combine with AND. Clinic matching ignores case and extra spaces. "
+    "q searches the description and the call_id (case-insensitive substring). "
     "25 issues per page.",
 )
 def list_issues(params: Annotated[IssueListParams, Query()], session: SessionDep) -> services.Page:

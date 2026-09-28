@@ -19,6 +19,11 @@
   {% endif %}
 
   <form class="card filters" method="get" action="/issues" aria-label="Filter issues">
+    <div class="field field-search">
+      <label for="q">Search</label>
+      <input id="q" name="q" type="search" value="{{ filters.q or '' }}" maxlength="100"
+             placeholder="Description or call ID">
+    </div>
     <div class="field">
       <label for="clinic">Clinic</label>
       <select id="clinic" name="clinic">

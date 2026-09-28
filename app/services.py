@@ -97,6 +97,12 @@ def _apply_filters(statement: Select, filters: IssueFilters) -> Select:
         statement = statement.where(Issue.status == filters.status)
     if filters.severity is not None:
         statement = statement.where(Issue.severity == filters.severity)
+    if filters.q is not None:
+        # Case-insensitive substring match. autoescape makes % and _ literal.
+        statement = statement.where(
+            Issue.description.icontains(filters.q, autoescape=True)
+            | Issue.call_id.icontains(filters.q, autoescape=True)
+        )
     return statement
 
 

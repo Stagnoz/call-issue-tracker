@@ -55,7 +55,7 @@ router = APIRouter(include_in_schema=False)
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
-FILTER_FIELDS = ("clinic", "category", "status", "severity")
+FILTER_FIELDS = ("q", "clinic", "category", "status", "severity")
 
 
 def render(request: Request, template: str, context: dict, status_code: int = 200) -> HTMLResponse:

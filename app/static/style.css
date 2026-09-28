@@ -344,6 +344,10 @@ textarea:focus {
   align-items: end;
 }
 
+.field-search {
+  grid-column: 1 / -1;
+}
+
 .filter-actions {
   display: flex;
   align-items: center;

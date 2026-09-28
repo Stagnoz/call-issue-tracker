@@ -129,13 +129,15 @@ class IssueFilters(BaseModel):
     category: Category | None = None
     status: Status | None = None
     severity: Severity | None = None
+    # Free-text search in the description and the call_id.
+    q: str | None = Field(default=None, max_length=100)
 
-    @field_validator("clinic", "category", "status", "severity", mode="before")
+    @field_validator("clinic", "category", "status", "severity", "q", mode="before")
     @classmethod
     def empty_means_no_filter(cls, value: object) -> object:
         # A form submitted with "All" selected sends ?category= ; treat it as unset.
-        if isinstance(value, str) and not value.strip():
-            return None
+        if isinstance(value, str):
+            return value.strip() or None
         return value
 
 
