@@ -13,8 +13,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 
-from app.models import Clinic, Issue, Status
-from app.schemas import IssueCreate, IssueFilters
+from app.models import Category, Clinic, Issue, Status
+from app.schemas import CategoryCount, ClinicCount, IssueCreate, IssueFilters, Stats
 
 PER_PAGE = 25
 
@@ -130,3 +130,38 @@ def database_is_reachable(session: Session) -> bool:
     except SQLAlchemyError:
         return False
     return True
+
+
+def get_stats(session: Session) -> Stats:
+    """Dashboard numbers. Every category appears, with 0 if it has no issues.
+    Both breakdowns are sorted by count descending, ties alphabetically."""
+    total = session.scalar(select(func.count(Issue.id))) or 0
+    open_count = (
+        session.scalar(select(func.count(Issue.id)).where(Issue.status == Status.OPEN)) or 0
+    )
+
+    category_rows = session.execute(
+        select(Issue.category, func.count(Issue.id)).group_by(Issue.category)
+    )
+    counts_by_category = {category: count for category, count in category_rows}
+    by_category = [
+        CategoryCount(
+            category=category, label=category.label, count=counts_by_category.get(category, 0)
+        )
+        for category in Category
+    ]
+    by_category.sort(key=lambda item: (-item.count, item.label))
+
+    clinic_rows = session.execute(
+        select(Clinic.name, func.count(Issue.id)).join(Issue.clinic).group_by(Clinic.id)
+    )
+    by_clinic = [ClinicCount(clinic=name, count=count) for name, count in clinic_rows]
+    by_clinic.sort(key=lambda item: (-item.count, item.clinic.casefold()))
+
+    return Stats(
+        total=total,
+        open=open_count,
+        resolved=total - open_count,
+        by_category=by_category,
+        by_clinic=by_clinic,
+    )

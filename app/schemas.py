@@ -59,3 +59,22 @@ class IssuePage(BaseModel):
     page: int
     per_page: int
     pages: int
+
+
+class CategoryCount(BaseModel):
+    category: Category
+    label: str
+    count: int
+
+
+class ClinicCount(BaseModel):
+    clinic: str
+    count: int
+
+
+class Stats(BaseModel):
+    total: int
+    open: int
+    resolved: int
+    by_category: list[CategoryCount]
+    by_clinic: list[ClinicCount]
