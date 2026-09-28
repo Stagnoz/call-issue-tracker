@@ -53,7 +53,6 @@
             <th scope="col">Severity</th>
             <th scope="col">Status</th>
             <th scope="col">Description</th>
-            <th scope="col"><span class="visually-hidden">Actions</span></th>
           </tr>
         </thead>
         <tbody>
@@ -61,29 +60,26 @@
             <tr>
               <td data-label="ID">#{{ issue.id }}</td>
               <td data-label="Created">
-                <time datetime="{{ issue.created_at.isoformat() }}">{{ issue.created_at | local_time(tz) }}</time>
+                <time class="nowrap" datetime="{{ issue.created_at.isoformat() }}">{{ issue.created_at | local_time(tz) }}</time>
               </td>
-              <td data-label="Call ID"><code>{{ issue.call_id }}</code></td>
+              <td data-label="Call ID"><code class="nowrap">{{ issue.call_id }}</code></td>
               <td data-label="Clinic">{{ issue.clinic_name }}</td>
               <td data-label="Category">{{ category_badge(issue.category) }}</td>
               <td data-label="Severity">{{ severity_badge(issue.severity) }}</td>
               <td data-label="Status">
-                {{ status_badge(issue.status) }}
-                {% if issue.resolved_at %}
-                  <div class="muted small">
-                    <time datetime="{{ issue.resolved_at.isoformat() }}">{{ issue.resolved_at | local_time(tz) }}</time>
-                  </div>
-                {% endif %}
+                <div class="status-cell">
+                  {{ status_badge(issue.status) }}
+                  {% if issue.resolved_at %}
+                    <time class="muted small nowrap" datetime="{{ issue.resolved_at.isoformat() }}">{{ issue.resolved_at | local_time(tz) }}</time>
+                  {% else %}
+                    <form method="post" action="/issues/{{ issue.id }}/resolve">
+                      <input type="hidden" name="return_query" value="{{ return_query }}">
+                      <button class="button button-small button-secondary" type="submit">Mark as resolved</button>
+                    </form>
+                  {% endif %}
+                </div>
               </td>
               <td data-label="Description" class="description">{{ issue.description }}</td>
-              <td class="actions">
-                {% if issue.status == "open" %}
-                  <form method="post" action="/issues/{{ issue.id }}/resolve">
-                    <input type="hidden" name="return_query" value="{{ return_query }}">
-                    <button class="button button-small button-secondary" type="submit">Mark as resolved</button>
-                  </form>
-                {% endif %}
-              </td>
             </tr>
           {% endfor %}
         </tbody>

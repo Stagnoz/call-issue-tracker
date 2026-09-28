@@ -78,8 +78,8 @@ def test_list_pagination_keeps_filters(client, session):
 
     assert "Page 1 of 2" in first.text
     assert 'href="/issues?status=open&amp;page=2"' in first.text
-    assert len(re.findall(r"<code>call-\d+</code>", first.text)) == 25
-    assert len(re.findall(r"<code>call-\d+</code>", second.text)) == 5
+    assert len(re.findall(r"<code[^>]*>call-\d+</code>", first.text)) == 25
+    assert len(re.findall(r"<code[^>]*>call-\d+</code>", second.text)) == 5
 
 
 def test_new_issue_form_page(client, sample_issues):
