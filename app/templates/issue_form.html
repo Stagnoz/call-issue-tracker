@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% from "_macros.html" import enum_select %}
-{% block title %}New issue{% endblock %}
+{% from "_macros.html" import enum_select with context %}
+{% block title %}{{ t("form.title") }}{% endblock %}
 
 {% macro field_error(name) -%}
   {% if errors[name] %}<p class="field-error" id="{{ name }}-error">{{ errors[name] }}</p>{% endif %}
@@ -9,26 +9,26 @@
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>New issue</h1>
-      <p class="subtitle">Record a problem found while reviewing an assistant call. New issues start as open.</p>
+      <h1>{{ t("form.title") }}</h1>
+      <p class="subtitle">{{ t("form.subtitle") }}</p>
     </div>
   </div>
 
   {% if errors %}
-    <div class="notice notice-error" role="alert">The issue was not saved. Please fix the highlighted fields.</div>
+    <div class="notice notice-error" role="alert">{{ t("form.not_saved") }}</div>
   {% endif %}
 
   <form class="card" method="post" action="/issues">
     <div class="form-grid">
       <div class="field">
-        <label for="call_id">Call ID</label>
+        <label for="call_id">{{ t("field.call_id") }}</label>
         <input id="call_id" name="call_id" value="{{ values.call_id }}" maxlength="100" required
                {% if errors.call_id %}aria-invalid="true" aria-describedby="call_id-error"{% endif %}>
         {{ field_error("call_id") }}
       </div>
 
       <div class="field">
-        <label for="clinic">Clinic</label>
+        <label for="clinic">{{ t("field.clinic") }}</label>
         <input id="clinic" name="clinic" value="{{ values.clinic }}" list="clinic-options" maxlength="100"
                required autocomplete="off"
                aria-describedby="clinic-hint{% if errors.clinic %} clinic-error{% endif %}"
@@ -36,25 +36,23 @@
         <datalist id="clinic-options">
           {% for name in clinics %}<option value="{{ name }}">{% endfor %}
         </datalist>
-        <p class="hint" id="clinic-hint">Pick an existing clinic or type a new name.</p>
+        <p class="hint" id="clinic-hint">{{ t("form.clinic_hint") }}</p>
         {{ field_error("clinic") }}
       </div>
 
       <div class="field">
-        {{ enum_select("category", "Category", categories, values.category, invalid=errors.category) }}
+        {{ enum_select("category", categories, values.category, invalid=errors.category) }}
         {{ field_error("category") }}
       </div>
 
       <div class="field">
-        {{ enum_select("severity", "Severity", severities, values.severity, invalid=errors.severity) }}
+        {{ enum_select("severity", severities, values.severity, invalid=errors.severity) }}
         {{ field_error("severity") }}
       </div>
 
       <div class="field full">
-        <label for="description">Description</label>
-        <p class="hint hint-privacy" id="description-hint">
-          Do not include patient names, phone numbers or health details. Reference the call by call_id.
-        </p>
+        <label for="description">{{ t("field.description") }}</label>
+        <p class="hint hint-privacy" id="description-hint">{{ t("form.privacy_hint") }}</p>
         <textarea id="description" name="description" maxlength="2000" required
                   aria-describedby="description-hint{% if errors.description %} description-error{% endif %}"
                   {% if errors.description %}aria-invalid="true"{% endif %}>{{ values.description }}</textarea>
@@ -62,8 +60,8 @@
       </div>
 
       <div class="form-actions full">
-        <button class="button" type="submit">Create issue</button>
-        <a href="/issues">Cancel</a>
+        <button class="button" type="submit">{{ t("form.submit") }}</button>
+        <a href="/issues">{{ t("form.cancel") }}</a>
       </div>
     </div>
   </form>

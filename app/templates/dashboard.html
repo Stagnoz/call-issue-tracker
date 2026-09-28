@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Dashboard{% endblock %}
+{% block title %}{{ t("dashboard.title") }}{% endblock %}
 
 {% macro bar(label, count, max_count, href, variant="") -%}
   <li class="bar-row">
@@ -14,74 +14,74 @@
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>Dashboard</h1>
-      <p class="subtitle">Where the assistant goes wrong, across all recorded issues.</p>
+      <h1>{{ t("dashboard.title") }}</h1>
+      <p class="subtitle">{{ t("dashboard.subtitle") }}</p>
     </div>
   </div>
 
   <div class="stat-grid">
     <p class="card stat">
-      <span class="stat-label">Total issues</span>
+      <span class="stat-label">{{ t("dashboard.total") }}</span>
       <span class="stat-value">{{ stats.total }}</span>
     </p>
     <p class="card stat stat-highlight">
-      <span class="stat-label">Open issues</span>
+      <span class="stat-label">{{ t("dashboard.open") }}</span>
       <span class="stat-value">{{ stats.open }}</span>
     </p>
     <p class="card stat stat-alert">
-      <span class="stat-label">Open critical or high</span>
+      <span class="stat-label">{{ t("dashboard.critical_or_high") }}</span>
       <span class="stat-value">{{ stats.open_critical_or_high }}</span>
     </p>
     <p class="card stat">
-      <span class="stat-label">Resolved</span>
+      <span class="stat-label">{{ t("dashboard.resolved") }}</span>
       <span class="stat-value">{{ stats.resolved }}</span>
     </p>
     <p class="card stat">
-      <span class="stat-label">Median time to resolution</span>
+      <span class="stat-label">{{ t("dashboard.median") }}</span>
       <span class="stat-value">
-        {% if stats.median_resolution_hours is not none %}{{ stats.median_resolution_hours | duration }}{% else %}-{% endif %}
+        {% if stats.median_resolution_hours is not none %}{{ duration(stats.median_resolution_hours) }}{% else %}-{% endif %}
       </span>
     </p>
   </div>
 
   <div class="dashboard-grid">
     <section class="card" aria-labelledby="by-severity">
-      <h2 id="by-severity">Open issues by severity</h2>
+      <h2 id="by-severity">{{ t("dashboard.by_severity") }}</h2>
       <ul class="bars">
         {% for row in stats.open_by_severity %}
-          {{ bar(row.label, row.count, severity_max, "/issues?status=open&severity=" ~ row.severity.value, row.severity.value) }}
+          {{ bar(t("severity." ~ row.severity.value), row.count, severity_max, "/issues?status=open&severity=" ~ row.severity.value, row.severity.value) }}
         {% endfor %}
       </ul>
     </section>
 
     <section class="card" aria-labelledby="per-day">
-      <h2 id="per-day">Issues created per day</h2>
-      <p class="muted small chart-caption">Last {{ stats.created_per_day | length }} days</p>
+      <h2 id="per-day">{{ t("dashboard.per_day") }}</h2>
+      <p class="muted small chart-caption">{{ t("dashboard.last_days", days=stats.created_per_day | length) }}</p>
       <ol class="daily-chart">
         {% for row in stats.created_per_day %}
-          <li title="{{ row.day | short_date }}: {{ row.count }}">
+          <li title="{{ short_date(row.day) }}: {{ row.count }}">
             <span class="daily-bar" style="height: {{ (row.count / daily_max * 100) | round(1) }}%"></span>
-            <span class="visually-hidden">{{ row.day | short_date }}: {{ row.count }}</span>
+            <span class="visually-hidden">{{ short_date(row.day) }}: {{ row.count }}</span>
           </li>
         {% endfor %}
       </ol>
       <div class="daily-axis muted small" aria-hidden="true">
-        <span>{{ stats.created_per_day[0].day | short_date }}</span>
-        <span>{{ stats.created_per_day[-1].day | short_date }}</span>
+        <span>{{ short_date(stats.created_per_day[0].day) }}</span>
+        <span>{{ short_date(stats.created_per_day[-1].day) }}</span>
       </div>
     </section>
 
     <section class="card" aria-labelledby="by-category">
-      <h2 id="by-category">Issues by category</h2>
+      <h2 id="by-category">{{ t("dashboard.by_category") }}</h2>
       <ul class="bars">
         {% for row in stats.by_category %}
-          {{ bar(row.label, row.count, category_max, "/issues?category=" ~ row.category.value) }}
+          {{ bar(t("category." ~ row.category.value), row.count, category_max, "/issues?category=" ~ row.category.value) }}
         {% endfor %}
       </ul>
     </section>
 
     <section class="card" aria-labelledby="by-clinic">
-      <h2 id="by-clinic">Issues by clinic</h2>
+      <h2 id="by-clinic">{{ t("dashboard.by_clinic") }}</h2>
       {% if stats.by_clinic %}
         <ul class="bars">
           {% for row in stats.by_clinic %}
@@ -89,7 +89,7 @@
           {% endfor %}
         </ul>
       {% else %}
-        <p class="muted">No issues recorded yet.</p>
+        <p class="muted">{{ t("dashboard.no_issues") }}</p>
       {% endif %}
     </section>
   </div>

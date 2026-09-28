@@ -3,11 +3,11 @@
 import csv
 import io
 from collections.abc import Mapping
-from datetime import date, datetime
+from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import parse_qs, urlencode
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
@@ -15,7 +15,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app import services
+from app import i18n, services
 from app.db import get_session
 from app.models import Category, Issue, Severity, Status
 from app.schemas import IssueCreate, IssueFilters, IssueListParams, ResolveRequest
@@ -23,34 +23,6 @@ from app.schemas import IssueCreate, IssueFilters, IssueListParams, ResolveReque
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
-
-
-def local_time(value: datetime, tz: ZoneInfo) -> str:
-    """Format a UTC datetime in the display timezone, e.g. '28 Sep 2026, 14:05'."""
-    local = value.astimezone(tz)
-    return f"{local.day} {local:%b %Y, %H:%M}"
-
-
-def duration(hours: float) -> str:
-    """Readable duration: '45 min', '20 h', '2 d 4 h'."""
-    minutes = round(hours * 60)
-    if minutes < 60:
-        return f"{minutes} min"
-    whole_hours = round(hours)
-    if whole_hours < 48:
-        return f"{whole_hours} h"
-    days, rest = divmod(whole_hours, 24)
-    return f"{days} d {rest} h" if rest else f"{days} d"
-
-
-def short_date(value: date) -> str:
-    """'28 Sep'."""
-    return f"{value.day} {value:%b}"
-
-
-templates.env.filters["local_time"] = local_time
-templates.env.filters["short_date"] = short_date
-templates.env.filters["duration"] = duration
 
 # HTML pages are not part of the API, so they stay out of /docs.
 router = APIRouter(include_in_schema=False)
@@ -61,13 +33,49 @@ FILTER_FIELDS = ("q", "clinic", "category", "status", "severity")
 
 
 def render(request: Request, template: str, context: dict, status_code: int = 200) -> HTMLResponse:
-    context = {"tz": request.app.state.settings.timezone, **context}
+    language = i18n.get_language(request)
+    tz = request.app.state.settings.timezone
+    # Where the language switch sends the user back to. After a POST (a form
+    # shown again with errors) the URL cannot be reloaded, so use the page's GET.
+    if request.method == "GET":
+        current_url = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+    else:
+        current_url = "/issues/new" if context.get("active") == "new" else "/issues"
+    context = {
+        "lang": language,
+        "t": partial(i18n.translate, language),
+        "datetime_text": partial(i18n.format_datetime, tz=tz, language=language),
+        "short_date": partial(i18n.format_short_date, language=language),
+        "duration": partial(i18n.format_duration, language=language),
+        "current_url": current_url,
+        **context,
+    }
     return templates.TemplateResponse(request, template, context, status_code=status_code)
 
 
 @router.get("/")
 def home() -> RedirectResponse:
     return RedirectResponse("/issues", status_code=303)
+
+
+def is_local_path(url: str) -> bool:
+    """True for a path on this site ('/issues?x=1'), false for '//other.site' or a full URL."""
+    return url.startswith("/") and not url.startswith("//") and "\\" not in url
+
+
+@router.post("/language")
+def set_language(
+    lang: Annotated[str, Form()] = "",
+    next_url: Annotated[str, Form(alias="next")] = "/issues",
+) -> RedirectResponse:
+    """The EN/IT switch: remember the choice in a cookie and go back to the same page."""
+    target = next_url if is_local_path(next_url) else "/issues"
+    response = RedirectResponse(target, status_code=303)
+    if lang in i18n.LANGUAGES:
+        response.set_cookie(
+            i18n.COOKIE_NAME, lang, max_age=365 * 24 * 3600, httponly=True, samesite="lax"
+        )
+    return response
 
 
 def filter_query(filters: IssueFilters, **extra: object) -> str:
@@ -77,35 +85,29 @@ def filter_query(filters: IssueFilters, **extra: object) -> str:
     return urlencode([(name, str(value)) for name, value in pairs if value is not None])
 
 
-def list_notice(request: Request) -> str | None:
-    """Confirmation message after a Post/Redirect/Get, e.g. ?created=42."""
-    messages = (
-        ("created", "Issue #{} created."),
-        ("resolved", "Issue #{} resolved."),
-        ("reopened", "Issue #{} reopened."),
-    )
-    for key, message in messages:
-        value = request.query_params.get(key, "")
+def list_notice(request: Request) -> dict | None:
+    """Confirmation after a Post/Redirect/Get, e.g. ?created=42, as a translation key and id."""
+    for event in ("created", "resolved", "reopened"):
+        value = request.query_params.get(event, "")
         if value.isdigit():
-            return message.format(value)
+            return {"key": f"notice.{event}", "id": int(value)}
     return None
 
 
-def parse_list_params(query: Mapping[str, str]) -> tuple[IssueListParams, str | None]:
+def parse_list_params(query: Mapping[str, str]) -> tuple[IssueListParams, bool]:
     """Filters and page from a query string. Invalid values fall back to no
-    filters plus a message, so a bad shared link still opens the page."""
+    filters (and True), so a bad shared link still opens the page."""
     try:
-        return IssueListParams.model_validate(dict(query)), None
+        return IssueListParams.model_validate(dict(query)), False
     except ValidationError:
-        message = "Some filter values in this link are not valid, so no filters are applied."
-        return IssueListParams(), message
+        return IssueListParams(), True
 
 
 def render_issue_list(
     request: Request,
     session: Session,
     params: IssueListParams,
-    filter_error: str | None = None,
+    filter_error: bool = False,
     note_error: dict | None = None,
     status_code: int = 200,
 ) -> HTMLResponse:
@@ -145,25 +147,10 @@ def issue_list(request: Request, session: SessionDep) -> HTMLResponse:
     return render_issue_list(request, session, params, filter_error, status_code=status_code)
 
 
-def error_message(error: dict) -> str:
-    """Short, human message for one Pydantic validation error."""
-    kind = error["type"]
-    limits = error.get("ctx", {})
-    if kind == "string_too_short":
-        if not str(error.get("input", "")).strip():
-            return "This field is required."
-        return f"Must be at least {limits['min_length']} characters."
-    if kind == "string_too_long":
-        return f"Must be at most {limits['max_length']} characters."
-    if kind == "enum":
-        return "Choose one of the options."
-    return error["msg"]
-
-
-def form_errors(exc: ValidationError) -> dict[str, str]:
+def form_errors(exc: ValidationError, language: str) -> dict[str, str]:
     errors: dict[str, str] = {}
     for error in exc.errors():
-        errors.setdefault(str(error["loc"][0]), error_message(error))
+        errors.setdefault(str(error["loc"][0]), i18n.error_message(error, language))
     return errors
 
 
@@ -211,7 +198,8 @@ def create_issue_from_form(
         data = IssueCreate.model_validate(values)
     except ValidationError as exc:
         # Re-render with the errors next to their fields and the input preserved.
-        return render_form(request, session, values, form_errors(exc), status_code=422)
+        errors = form_errors(exc, i18n.get_language(request))
+        return render_form(request, session, values, errors, status_code=422)
 
     issue = services.create_issue(session, data)
     # Post/Redirect/Get: reloading the list page cannot submit the form again.
@@ -232,8 +220,7 @@ def back_to_list(return_query: str, **message: int) -> RedirectResponse:
 
 
 def issue_not_found(request: Request, issue_id: int) -> HTMLResponse:
-    context = {"message": f"Issue #{issue_id} does not exist."}
-    return render(request, "not_found.html", context, status_code=404)
+    return render(request, "not_found.html", {"issue_id": issue_id}, status_code=404)
 
 
 @router.post("/issues/{issue_id}/resolve")
@@ -251,7 +238,7 @@ def resolve_issue_from_form(
         params, _ = parse_list_params(dict(kept_list_query(return_query)))
         note_error = {
             "issue_id": issue_id,
-            "message": error_message(exc.errors()[0]),
+            "message": i18n.error_message(exc.errors()[0], i18n.get_language(request)),
             "value": note,
         }
         return render_issue_list(request, session, params, note_error=note_error, status_code=422)
@@ -275,6 +262,7 @@ def reopen_issue_from_form(
     return back_to_list(return_query, reopened=issue.id)
 
 
+# The CSV is data for spreadsheets, not interface text, so it is not translated.
 CSV_COLUMNS = (
     "id",
     "created_at_utc",
@@ -323,7 +311,8 @@ def export_issues_csv(request: Request, session: SessionDep) -> Response:
     """The currently filtered list as a CSV file, all pages."""
     params, filter_error = parse_list_params(request.query_params)
     if filter_error:
-        return PlainTextResponse(filter_error, status_code=422)
+        message = i18n.translate(i18n.get_language(request), "notice.filters_invalid")
+        return PlainTextResponse(message, status_code=422)
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
@@ -333,7 +322,7 @@ def export_issues_csv(request: Request, session: SessionDep) -> Response:
     filename = f"issues-{services.utc_now():%Y%m%d}.csv"
     return Response(
         # The byte order mark tells Excel the file is UTF-8 (accents display correctly).
-        content="\ufeff" + buffer.getvalue(),
+        content="﻿" + buffer.getvalue(),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

@@ -144,6 +144,41 @@ code {
   box-shadow: 0 0 0 4px rgba(32, 246, 225, 0.2);
 }
 
+.topbar-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.lang-switch {
+  display: flex;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.lang-switch button {
+  background: transparent;
+  border: 0;
+  color: rgba(255, 255, 255, 0.8);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.25rem 0.55rem;
+  cursor: pointer;
+}
+
+.lang-switch button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.lang-switch button[aria-pressed="true"] {
+  background: var(--teal);
+  color: var(--navy);
+}
+
 .topbar nav {
   display: flex;
   gap: 0.25rem;

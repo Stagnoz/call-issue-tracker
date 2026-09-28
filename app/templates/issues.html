@@ -1,53 +1,54 @@
 {% extends "base.html" %}
-{% from "_macros.html" import category_badge, severity_badge, status_badge, enum_select %}
-{% block title %}Issues{% endblock %}
+{% from "_macros.html" import category_badge, severity_badge, status_badge, enum_select with context %}
+{% block title %}{{ t("list.title") }}{% endblock %}
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>Issues</h1>
+      <h1>{{ t("list.title") }}</h1>
       <p class="subtitle">
-        {{ page.total }} issue{{ "" if page.total == 1 else "s" }}{% if filtered %} matching these filters{% endif %}, newest first
+        {%- set summary = "list.summary_filtered_" if filtered else "list.summary_" -%}
+        {{ t(summary ~ ("one" if page.total == 1 else "many"), count=page.total) }}
       </p>
     </div>
     <div class="header-actions">
-      <a class="button button-secondary" href="/issues.csv{% if export_query %}?{{ export_query }}{% endif %}" download>Export CSV</a>
-      <a class="button" href="/issues/new">New issue</a>
+      <a class="button button-secondary" href="/issues.csv{% if export_query %}?{{ export_query }}{% endif %}" download>{{ t("list.export") }}</a>
+      <a class="button" href="/issues/new">{{ t("nav.new") }}</a>
     </div>
   </div>
 
-  {% if notice %}<div class="notice" role="status">{{ notice }}</div>{% endif %}
-  {% if filter_error %}<div class="notice notice-error" role="alert">{{ filter_error }}</div>{% endif %}
+  {% if notice %}<div class="notice" role="status">{{ t(notice.key, id=notice.id) }}</div>{% endif %}
+  {% if filter_error %}<div class="notice notice-error" role="alert">{{ t("notice.filters_invalid") }}</div>{% endif %}
   {% if note_error %}
-    <div class="notice notice-error" role="alert">Issue #{{ note_error.issue_id }} was not resolved. Please fix the note.</div>
+    <div class="notice notice-error" role="alert">{{ t("notice.note_invalid", id=note_error.issue_id) }}</div>
   {% endif %}
 
-  <form class="card filters" method="get" action="/issues" aria-label="Filter issues">
+  <form class="card filters" method="get" action="/issues" aria-label="{{ t('filters.label') }}">
     <div class="field field-search">
-      <label for="q">Search</label>
+      <label for="q">{{ t("filters.search") }}</label>
       <input id="q" name="q" type="search" value="{{ filters.q or '' }}" maxlength="100"
-             placeholder="Description or call ID">
+             placeholder="{{ t('filters.search_placeholder') }}">
     </div>
     <div class="field">
-      <label for="clinic">Clinic</label>
+      <label for="clinic">{{ t("field.clinic") }}</label>
       <select id="clinic" name="clinic">
-        <option value="">All clinics</option>
+        <option value="">{{ t("filters.all_clinics") }}</option>
         {% for name in clinics %}
           <option value="{{ name }}"{% if selected_clinic == name %} selected{% endif %}>{{ name }}</option>
         {% endfor %}
       </select>
     </div>
     <div class="field">
-      {{ enum_select("category", "Category", categories, filters.category, "All categories") }}
+      {{ enum_select("category", categories, filters.category, t("filters.all_categories")) }}
     </div>
     <div class="field">
-      {{ enum_select("status", "Status", statuses, filters.status, "All statuses") }}
+      {{ enum_select("status", statuses, filters.status, t("filters.all_statuses")) }}
     </div>
     <div class="field">
-      {{ enum_select("severity", "Severity", severities, filters.severity, "All severities") }}
+      {{ enum_select("severity", severities, filters.severity, t("filters.all_severities")) }}
     </div>
     <div class="filter-actions">
-      <button class="button" type="submit">Apply filters</button>
-      <a href="/issues">Clear filters</a>
+      <button class="button" type="submit">{{ t("filters.apply") }}</button>
+      <a href="/issues">{{ t("filters.clear") }}</a>
     </div>
   </form>
 
@@ -56,59 +57,59 @@
       <table class="issue-table">
         <thead>
           <tr>
-            <th scope="col">ID</th>
-            <th scope="col">Created</th>
-            <th scope="col">Call ID</th>
-            <th scope="col">Clinic</th>
-            <th scope="col">Category</th>
-            <th scope="col">Severity</th>
-            <th scope="col">Status</th>
-            <th scope="col">Description</th>
+            <th scope="col">{{ t("field.id") }}</th>
+            <th scope="col">{{ t("field.created") }}</th>
+            <th scope="col">{{ t("field.call_id") }}</th>
+            <th scope="col">{{ t("field.clinic") }}</th>
+            <th scope="col">{{ t("field.category") }}</th>
+            <th scope="col">{{ t("field.severity") }}</th>
+            <th scope="col">{{ t("field.status") }}</th>
+            <th scope="col">{{ t("field.description") }}</th>
           </tr>
         </thead>
         <tbody>
           {% for issue in page.items %}
             <tr>
-              <td data-label="ID">#{{ issue.id }}</td>
-              <td data-label="Created">
-                <time class="nowrap" datetime="{{ issue.created_at.isoformat() }}">{{ issue.created_at | local_time(tz) }}</time>
+              <td data-label="{{ t('field.id') }}">#{{ issue.id }}</td>
+              <td data-label="{{ t('field.created') }}">
+                <time class="nowrap" datetime="{{ issue.created_at.isoformat() }}">{{ datetime_text(issue.created_at) }}</time>
               </td>
-              <td data-label="Call ID"><code class="nowrap">{{ issue.call_id }}</code></td>
-              <td data-label="Clinic">{{ issue.clinic_name }}</td>
-              <td data-label="Category">{{ category_badge(issue.category) }}</td>
-              <td data-label="Severity">{{ severity_badge(issue.severity) }}</td>
-              <td data-label="Status">
+              <td data-label="{{ t('field.call_id') }}"><code class="nowrap">{{ issue.call_id }}</code></td>
+              <td data-label="{{ t('field.clinic') }}">{{ issue.clinic_name }}</td>
+              <td data-label="{{ t('field.category') }}">{{ category_badge(issue.category) }}</td>
+              <td data-label="{{ t('field.severity') }}">{{ severity_badge(issue.severity) }}</td>
+              <td data-label="{{ t('field.status') }}">
                 <div class="status-cell">
                   {{ status_badge(issue.status) }}
                   {% if issue.status == "resolved" %}
-                    <time class="muted small nowrap" datetime="{{ issue.resolved_at.isoformat() }}">{{ issue.resolved_at | local_time(tz) }}</time>
+                    <time class="muted small nowrap" datetime="{{ issue.resolved_at.isoformat() }}">{{ datetime_text(issue.resolved_at) }}</time>
                     {% if issue.resolution_note %}
                       <p class="resolution-note">{{ issue.resolution_note }}</p>
                     {% endif %}
                     <form method="post" action="/issues/{{ issue.id }}/reopen">
                       <input type="hidden" name="return_query" value="{{ return_query }}">
-                      <button class="link-button" type="submit">Reopen</button>
+                      <button class="link-button" type="submit">{{ t("reopen.submit") }}</button>
                     </form>
                   {% else %}
                     {% set failed = note_error and note_error.issue_id == issue.id %}
                     <details class="resolve"{% if failed %} open{% endif %}>
-                      <summary class="button button-small button-secondary">Mark as resolved</summary>
+                      <summary class="button button-small button-secondary">{{ t("resolve.open") }}</summary>
                       <form class="resolve-form" method="post" action="/issues/{{ issue.id }}/resolve">
                         <input type="hidden" name="return_query" value="{{ return_query }}">
-                        <label for="note-{{ issue.id }}">What was fixed? (optional)</label>
+                        <label for="note-{{ issue.id }}">{{ t("resolve.note_label") }}</label>
                         <input id="note-{{ issue.id }}" name="note" maxlength="500"
                                value="{{ note_error.value if failed else '' }}"
                                {% if failed %}aria-invalid="true" aria-describedby="note-{{ issue.id }}-error"{% endif %}>
                         {% if failed %}
                           <p class="field-error" id="note-{{ issue.id }}-error">{{ note_error.message }}</p>
                         {% endif %}
-                        <button class="button button-small" type="submit">Resolve</button>
+                        <button class="button button-small" type="submit">{{ t("resolve.submit") }}</button>
                       </form>
                     </details>
                   {% endif %}
                 </div>
               </td>
-              <td data-label="Description" class="description">{{ issue.description }}</td>
+              <td data-label="{{ t('field.description') }}" class="description">{{ issue.description }}</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -116,24 +117,24 @@
     </div>
 
     {% if page.pages > 1 %}
-      <nav class="pagination" aria-label="Pagination">
+      <nav class="pagination" aria-label="{{ t('pagination.label') }}">
         {% if page.page > 1 %}
-          <a class="button button-secondary" href="/issues?{{ page_query(page.page - 1) }}">Previous</a>
+          <a class="button button-secondary" href="/issues?{{ page_query(page.page - 1) }}">{{ t("pagination.previous") }}</a>
         {% else %}<span></span>{% endif %}
-        <span class="muted">Page {{ page.page }} of {{ page.pages }}</span>
+        <span class="muted">{{ t("pagination.page", page=page.page, pages=page.pages) }}</span>
         {% if page.page < page.pages %}
-          <a class="button button-secondary" href="/issues?{{ page_query(page.page + 1) }}">Next</a>
+          <a class="button button-secondary" href="/issues?{{ page_query(page.page + 1) }}">{{ t("pagination.next") }}</a>
         {% else %}<span></span>{% endif %}
       </nav>
     {% endif %}
   {% else %}
     <div class="card empty-state">
       {% if filtered %}
-        <p>No issues match these filters.</p>
-        <a href="/issues">Clear filters</a>
+        <p>{{ t("empty.filtered") }}</p>
+        <a href="/issues">{{ t("filters.clear") }}</a>
       {% else %}
-        <p>No issues yet.</p>
-        <a href="/issues/new">Record the first one</a>
+        <p>{{ t("empty.none") }}</p>
+        <a href="/issues/new">{{ t("empty.create_first") }}</a>
       {% endif %}
     </div>
   {% endif %}
