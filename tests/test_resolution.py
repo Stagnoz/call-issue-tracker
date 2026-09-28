@@ -5,7 +5,7 @@ from datetime import timedelta
 import pytest
 
 from app import services
-from app.routes.web import duration
+from app.i18n import format_duration
 from app.schemas import IssueFilters
 from app.seed import seed_if_empty
 from tests.conftest import FIXED_NOW, make_issue
@@ -140,7 +140,7 @@ def test_reopened_issue_leaves_the_median(client, session):
     [(0.75, "45 min"), (1, "1 h"), (20.4, "20 h"), (48, "2 d"), (52, "2 d 4 h")],
 )
 def test_duration_format(hours, text):
-    assert duration(hours) == text
+    assert format_duration(hours, "en") == text
 
 
 def test_every_resolved_seed_issue_has_a_note(session):
