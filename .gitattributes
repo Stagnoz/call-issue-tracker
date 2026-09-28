@@ -1,0 +1,3 @@
+# Normalize line endings to LF everywhere, so files copied into Linux containers
+# behave the same whether they were checked out on Windows, macOS or Linux.
+* text=auto eol=lf
