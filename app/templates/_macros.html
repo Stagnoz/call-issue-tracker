@@ -1,0 +1,24 @@
+{# Imported "with context" so that t() is available here. #}
+
+{% macro category_badge(category) -%}
+  <span class="badge badge-category">{{ t("category." ~ category.value) }}</span>
+{%- endmacro %}
+
+{% macro severity_badge(severity) -%}
+  <span class="badge badge-{{ severity.value }}">{{ t("severity." ~ severity.value) }}</span>
+{%- endmacro %}
+
+{% macro status_badge(status) -%}
+  <span class="badge badge-{{ status.value }}">{{ t("status." ~ status.value) }}</span>
+{%- endmacro %}
+
+{# name is also the translation prefix: category, status or severity. #}
+{% macro enum_select(name, options, selected, all_label=None, invalid=False) -%}
+  <label for="{{ name }}">{{ t("field." ~ name) }}</label>
+  <select id="{{ name }}" name="{{ name }}"{% if invalid %} aria-invalid="true" aria-describedby="{{ name }}-error"{% endif %}>
+    <option value="">{{ all_label or t("form.choose") }}</option>
+    {% for option in options %}
+      <option value="{{ option.value }}"{% if selected == option.value %} selected{% endif %}>{{ t(name ~ "." ~ option.value) }}</option>
+    {% endfor %}
+  </select>
+{%- endmacro %}

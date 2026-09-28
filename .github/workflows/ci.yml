@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Lint and tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Check formatting
+        run: ruff format --check .
+
+      - name: Run tests
+        run: pytest -q
+
+  docker-smoke:
+    # Proves the Definition of Done on a clean machine: the app starts with
+    # `docker compose up`, the demo data loads, issues can be created and
+    # resolved, and data survives a restart and a container re-creation.
+    name: Docker smoke test
+    needs: test
+    runs-on: ubuntu-24.04
+    env:
+      BASE_URL: http://localhost:8000
+    defaults:
+      run:
+        # Explicit bash adds -o pipefail, so a failing curl in a pipe fails the step.
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start (no .env file)
+        run: docker compose up -d --build
+
+      - name: Wait for /health
+        run: timeout 60 bash -c 'until curl -fsS "$BASE_URL/health"; do sleep 2; done'
+
+      - name: Demo data is loaded
+        run: |
+          total=$(curl -fsS "$BASE_URL/api/stats" | jq '.total')
+          echo "Total issues: $total"
+          test "$total" -ge 30
+
+      - name: Create and resolve an issue through the API
+        run: |
+          id=$(curl -fsS -X POST "$BASE_URL/api/issues" \
+            -H "Content-Type: application/json" \
+            -d '{"call_id": "ci-smoke-1", "clinic": "CI Test Clinic", "description": "Created by the CI smoke test.", "category": "other", "severity": "low"}' \
+            | jq -r '.id')
+          echo "Created issue $id"
+          curl -fsS -X POST "$BASE_URL/api/issues/$id/resolve" | jq -e '.status == "resolved"'
+          echo "ISSUE_ID=$id" >> "$GITHUB_ENV"
+
+      - name: Create an issue through the HTML form
+        run: |
+          location=$(curl -fsS -o /dev/null -w '%{redirect_url}' -X POST "$BASE_URL/issues" \
+            --data-urlencode "call_id=ci-smoke-form" \
+            --data-urlencode "clinic=CI Test Clinic" \
+            --data-urlencode "description=Created through the HTML form by CI." \
+            --data-urlencode "category=booking" \
+            --data-urlencode "severity=medium")
+          echo "Redirected to $location"
+          case "$location" in */issues\?created=*) ;; *) exit 1 ;; esac
+
+      - name: Pages render
+        run: |
+          curl -fsS "$BASE_URL/issues?clinic=CI+Test+Clinic" | grep -F "ci-smoke-form" > /dev/null
+          curl -fsS "$BASE_URL/dashboard" | grep -F "Issues by clinic" > /dev/null
+          curl -fsS "$BASE_URL/issues/new" | grep -F "Do not include patient names" > /dev/null
+
+      - name: Restart the containers
+        run: |
+          echo "TOTAL_BEFORE=$(curl -fsS "$BASE_URL/api/stats" | jq '.total')" >> "$GITHUB_ENV"
+          docker compose restart
+
+      - name: Wait for /health after restart
+        run: timeout 60 bash -c 'until curl -fsS "$BASE_URL/health"; do sleep 2; done'
+
+      - name: Data survived the restart
+        run: |
+          curl -fsS "$BASE_URL/api/issues/$ISSUE_ID" \
+            | jq -e '.call_id == "ci-smoke-1" and .status == "resolved" and .resolved_at != null'
+
+      - name: Remove and re-create the container (volume kept)
+        run: |
+          docker compose down
+          docker compose up -d
+
+      - name: Wait for /health after re-creation
+        run: timeout 60 bash -c 'until curl -fsS "$BASE_URL/health"; do sleep 2; done'
+
+      - name: Data survived the re-creation and was not seeded twice
+        run: |
+          curl -fsS "$BASE_URL/api/issues/$ISSUE_ID" | jq -e '.status == "resolved"'
+          total=$(curl -fsS "$BASE_URL/api/stats" | jq '.total')
+          echo "Total issues: $total (before restart: $TOTAL_BEFORE)"
+          test "$total" -eq "$TOTAL_BEFORE"
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Clean up
+        if: always()
+        run: docker compose down -v

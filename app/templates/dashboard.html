@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% from "_macros.html" import category_badge, severity_badge with context %}
+{% block title %}{{ t("dashboard.title") }}{% endblock %}
+
+{# With open_count, the bar is split: the open part first, then the resolved part. #}
+{% macro bar(label, count, max_count, href=None, variant="", open_count=None, open_href="") -%}
+  <li class="bar-row">
+    <span class="bar-label">
+      {% if href %}<a href="{{ href }}">{{ label }}</a>{% else %}{{ label }}{% endif %}
+      {% if open_count is not none %}
+        <a class="bar-open" href="{{ open_href }}">{{ t("dashboard.open_count", count=open_count) }}</a>
+      {% endif %}
+    </span>
+    <div class="bar-track" aria-hidden="true">
+      {% if open_count is not none %}
+        <div class="bar-fill" style="width: {{ (open_count / max_count * 100) | round(1) }}%"></div>
+        <div class="bar-fill bar-fill-resolved" style="width: {{ ((count - open_count) / max_count * 100) | round(1) }}%"></div>
+      {% else %}
+        <div class="bar-fill{% if variant %} bar-fill-{{ variant }}{% endif %}" style="width: {{ (count / max_count * 100) | round(1) }}%"></div>
+      {% endif %}
+    </div>
+    <span class="bar-count">{{ count }}</span>
+  </li>
+{%- endmacro %}
+
+{# Change against the previous period. up_is_good: more resolved is good, more created is not. #}
+{% macro delta(current, previous, up_is_good) -%}
+  {% if previous is not none %}
+    {% set days = stats.period.days %}
+    {% set change = current - previous %}
+    {% if change == 0 %}
+      <span class="delta">{{ t("dashboard.no_change", days=days) }}</span>
+    {% else %}
+      <span class="delta {{ 'delta-good' if (change > 0) == up_is_good else 'delta-bad' }}">
+        <span aria-hidden="true">{{ "▲" if change > 0 else "▼" }}</span>
+        {{ "%+d" | format(change) }}{% if previous %} ({{ "%+d" | format((change / previous * 100) | round | int) }}%){% endif %}
+        {{ t("dashboard.vs_previous", days=days) }}
+      </span>
+    {% endif %}
+  {% endif %}
+{%- endmacro %}
+
+{% macro open_resolved_legend() -%}
+  <p class="legend muted small" aria-hidden="true">
+    <span class="swatch"></span>{{ t("status.open") }}
+    <span class="swatch swatch-resolved"></span>{{ t("status.resolved") }}
+  </p>
+{%- endmacro %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>{{ t("dashboard.title") }}</h1>
+      <p class="subtitle">{{ t("dashboard.subtitle") }}</p>
+    </div>
+    <nav class="period-switch" aria-label="{{ t('dashboard.period') }}">
+      {% for option in periods %}
+        <a href="/dashboard{% if option.days %}?period={{ option.value }}{% endif %}"{% if option == stats.period %} aria-current="true"{% endif %}>
+          {%- if option.days %}{{ t("dashboard.days", days=option.days) }}{% else %}{{ t("dashboard.all_time") }}{% endif -%}
+        </a>
+      {% endfor %}
+    </nav>
+  </div>
+
+  {% if period_error %}
+    <p class="notice notice-error" role="alert">{{ t("dashboard.period_error") }}</p>
+  {% endif %}
+
+  <section aria-labelledby="backlog">
+    <div class="section-header">
+      <h2 id="backlog">{{ t("dashboard.backlog") }}</h2>
+      <p class="muted small">{{ t("dashboard.backlog_hint") }}</p>
+    </div>
+
+    <div class="stat-grid">
+      <p class="card stat stat-highlight">
+        <span class="stat-label">{{ t("dashboard.open") }}</span>
+        <span class="stat-value">{{ stats.open }}</span>
+      </p>
+      <p class="card stat stat-alert">
+        <span class="stat-label">{{ t("dashboard.critical_or_high") }}</span>
+        <span class="stat-value">{{ stats.open_critical_or_high }}</span>
+      </p>
+    </div>
+
+    <div class="dashboard-grid">
+      <section class="card card-wide" aria-labelledby="needs-attention">
+        <h3 id="needs-attention">{{ t("dashboard.needs_attention") }}</h3>
+        <p class="muted small chart-caption">{{ t("dashboard.needs_attention_hint") }}</p>
+        {% if stats.needs_attention %}
+          <ol class="attention-list">
+            {% for issue in stats.needs_attention %}
+              <li>
+                <div class="attention-meta">
+                  {{ severity_badge(issue.severity) }}
+                  {{ category_badge(issue.category) }}
+                  <span class="muted small">{{ issue.clinic }}</span>
+                </div>
+                <a href="/issues?{{ {'status': 'open', 'q': issue.call_id} | urlencode }}">{{ issue.description | truncate(120) }}</a>
+                <span class="muted small">
+                  {{ t("dashboard.open_for", duration=duration((now - issue.created_at).total_seconds() / 3600)) }}
+                  · <code>{{ issue.call_id }}</code>
+                </span>
+              </li>
+            {% endfor %}
+          </ol>
+        {% else %}
+          <p class="muted">{{ t("dashboard.nothing_urgent") }}</p>
+        {% endif %}
+      </section>
+
+      <section class="card" aria-labelledby="by-severity">
+        <h3 id="by-severity">{{ t("dashboard.by_severity") }}</h3>
+        <ul class="bars">
+          {% for row in stats.open_by_severity %}
+            {{ bar(t("severity." ~ row.severity.value), row.count, severity_max, "/issues?status=open&severity=" ~ row.severity.value, row.severity.value) }}
+          {% endfor %}
+        </ul>
+      </section>
+
+      <section class="card" aria-labelledby="by-age">
+        <h3 id="by-age">{{ t("dashboard.by_age") }}</h3>
+        <ul class="bars">
+          {% for row in stats.open_by_age %}
+            {{ bar(t("age." ~ row.bucket), row.count, age_max, variant="age") }}
+          {% endfor %}
+        </ul>
+      </section>
+    </div>
+  </section>
+
+  <section aria-labelledby="flow">
+    <div class="section-header">
+      <h2 id="flow">{% if stats.period.days %}{{ t("dashboard.last_days", days=stats.period.days) }}{% else %}{{ t("dashboard.all_time") }}{% endif %}</h2>
+      {% if stats.period.days %}
+        <p class="muted small">{{ t("dashboard.links_all_time") }}</p>
+      {% endif %}
+    </div>
+
+    <div class="stat-grid">
+      <p class="card stat">
+        <span class="stat-label">{{ t("dashboard.created") if stats.period.days else t("dashboard.total") }}</span>
+        <span class="stat-value">{{ stats.total }}</span>
+        {{ delta(stats.total, stats.previous_total, up_is_good=false) }}
+      </p>
+      <p class="card stat">
+        <span class="stat-label">{{ t("dashboard.resolved") }}</span>
+        <span class="stat-value">{{ stats.resolved }}</span>
+        {{ delta(stats.resolved, stats.previous_resolved, up_is_good=true) }}
+      </p>
+      <p class="card stat">
+        <span class="stat-label">{{ t("dashboard.median") }}</span>
+        <span class="stat-value">
+          {% if stats.median_resolution_hours is not none %}{{ duration(stats.median_resolution_hours) }}{% else %}-{% endif %}
+        </span>
+      </p>
+    </div>
+
+    <div class="dashboard-grid">
+      <section class="card card-wide" aria-labelledby="per-day">
+        <h3 id="per-day">{{ t("dashboard.per_day") }}</h3>
+        <p class="muted small chart-caption">{{ t("dashboard.last_days", days=stats.created_per_day | length) }}</p>
+        <ol class="daily-chart{% if stats.created_per_day | length > 31 %} daily-chart-dense{% endif %}">
+          {% for row in stats.created_per_day %}
+            <li title="{{ short_date(row.day) }}: {{ row.count }}">
+              <span class="daily-bar" style="height: {{ (row.count / daily_max * 100) | round(1) }}%"></span>
+              <span class="visually-hidden">{{ short_date(row.day) }}: {{ row.count }}</span>
+            </li>
+          {% endfor %}
+        </ol>
+        <div class="daily-axis muted small" aria-hidden="true">
+          <span>{{ short_date(stats.created_per_day[0].day) }}</span>
+          <span>{{ short_date(stats.created_per_day[-1].day) }}</span>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="by-category">
+        <h3 id="by-category">{{ t("dashboard.by_category") }}</h3>
+        {{ open_resolved_legend() }}
+        <ul class="bars">
+          {% for row in stats.by_category %}
+            {{ bar(t("category." ~ row.category.value), row.count, category_max, "/issues?category=" ~ row.category.value,
+                   open_count=row.open, open_href="/issues?status=open&category=" ~ row.category.value) }}
+          {% endfor %}
+        </ul>
+      </section>
+
+      <section class="card" aria-labelledby="by-clinic">
+        <h3 id="by-clinic">{{ t("dashboard.by_clinic") }}</h3>
+        {% if stats.by_clinic %}
+          {{ open_resolved_legend() }}
+          <ul class="bars">
+            {% for row in stats.by_clinic %}
+              {{ bar(row.clinic, row.count, clinic_max, "/issues?clinic=" ~ (row.clinic | urlencode),
+                     open_count=row.open, open_href="/issues?status=open&clinic=" ~ (row.clinic | urlencode)) }}
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="muted">{{ t("dashboard.no_issues") }}</p>
+        {% endif %}
+      </section>
+    </div>
+  </section>
+{% endblock %}

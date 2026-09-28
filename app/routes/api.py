@@ -1,0 +1,186 @@
+"""JSON API under /api, plus the /health endpoint."""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import HTMLResponse, JSONResponse, Response
+from sqlalchemy.orm import Session
+
+from app import services
+from app.db import get_session
+from app.models import Issue
+from app.schemas import (
+    DeleteRequest,
+    IssueCreate,
+    IssueListParams,
+    IssueOut,
+    IssuePage,
+    Period,
+    ResolveRequest,
+    Stats,
+)
+
+router = APIRouter()
+
+SessionDep = Annotated[Session, Depends(get_session)]
+
+
+def _get_or_404(session: Session, issue_id: int) -> Issue:
+    issue = services.get_issue(session, issue_id)
+    if issue is None:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    return issue
+
+
+@router.post(
+    "/api/issues",
+    status_code=201,
+    response_model=IssueOut,
+    tags=["issues"],
+    summary="Create an issue",
+    description="New issues are always open. status and created_at are set by the server; "
+    "sending them is rejected with 422.",
+)
+def create_issue(data: IssueCreate, session: SessionDep) -> Issue:
+    return services.create_issue(session, data)
+
+
+@router.get(
+    "/api/issues",
+    response_model=IssuePage,
+    tags=["issues"],
+    summary="List issues, newest first",
+    description="Filters combine with AND. Clinic matching ignores case and extra spaces. "
+    "q searches the description and the call_id (case-insensitive substring). "
+    "25 issues per page.",
+)
+def list_issues(params: Annotated[IssueListParams, Query()], session: SessionDep) -> services.Page:
+    return services.list_issues(session, params, page=params.page)
+
+
+@router.get(
+    "/api/issues/{issue_id}",
+    response_model=IssueOut,
+    tags=["issues"],
+    summary="Get one issue",
+    responses={404: {"description": "Issue not found"}},
+)
+def get_issue(issue_id: int, session: SessionDep) -> Issue:
+    return _get_or_404(session, issue_id)
+
+
+@router.post(
+    "/api/issues/{issue_id}/resolve",
+    response_model=IssueOut,
+    tags=["issues"],
+    summary="Mark an issue as resolved",
+    description="Sets status to resolved and records resolved_at. The body is optional: "
+    '{"note": "what was fixed"}. Idempotent: resolving an already resolved issue returns it '
+    "unchanged, keeping the first resolution time and note.",
+    responses={404: {"description": "Issue not found"}},
+)
+def resolve_issue(issue_id: int, session: SessionDep, data: ResolveRequest | None = None) -> Issue:
+    note = data.note if data else None
+    issue = services.resolve_issue(session, issue_id, note=note)
+    if issue is None:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    return issue
+
+
+@router.post(
+    "/api/issues/{issue_id}/reopen",
+    response_model=IssueOut,
+    tags=["issues"],
+    summary="Reopen a resolved issue",
+    description="Sets status back to open and clears resolved_at and the resolution note. "
+    "Reopening an open issue returns it unchanged.",
+    responses={404: {"description": "Issue not found"}},
+)
+def reopen_issue(issue_id: int, session: SessionDep) -> Issue:
+    issue = services.reopen_issue(session, issue_id)
+    if issue is None:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    return issue
+
+
+@router.post(
+    "/api/issues/{issue_id}/delete",
+    status_code=204,
+    tags=["issues"],
+    summary="Delete an issue (soft delete)",
+    description='Body: {"reason": "why this issue should not exist"}, required. The issue is '
+    "hidden from lists, filters, the CSV and the statistics, and GET returns 404, but it stays "
+    "in the database and can be restored. Idempotent: deleting a deleted issue keeps the first "
+    "reason. A POST action rather than DELETE, so the reason travels in a body, not in the URL.",
+    responses={404: {"description": "Issue not found"}},
+)
+def delete_issue(issue_id: int, data: DeleteRequest, session: SessionDep) -> Response:
+    if services.delete_issue(session, issue_id, reason=data.reason) is None:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    return Response(status_code=204)
+
+
+@router.post(
+    "/api/issues/{issue_id}/restore",
+    response_model=IssueOut,
+    tags=["issues"],
+    summary="Restore a deleted issue",
+    description="Undoes a delete: the issue comes back with its status and dates unchanged. "
+    "Restoring an issue that is not deleted returns it unchanged.",
+    responses={404: {"description": "Issue not found"}},
+)
+def restore_issue(issue_id: int, session: SessionDep) -> Issue:
+    issue = services.restore_issue(session, issue_id)
+    if issue is None:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    return issue
+
+
+@router.get(
+    "/api/stats",
+    response_model=Stats,
+    tags=["stats"],
+    summary="Dashboard statistics",
+    description="Backlog, always the open issues right now: open count, open critical or "
+    "high, open by severity, open by age, and the oldest open critical/high issues. "
+    "Flow, for the period (`7`, `30` or `90` local calendar days including today, or "
+    "`all`, the default): issues created and resolved, the same counts for the previous "
+    "period, median time to resolution, issues by category (including zero counts) and by "
+    "clinic with how many are still open, and issues created per day (the last 30 days "
+    "for `all`). Days are in APP_TIMEZONE.",
+)
+def get_stats(
+    request: Request,
+    session: SessionDep,
+    period: Annotated[Period, Query(description="Time window for the flow numbers.")] = (
+        Period.ALL
+    ),
+) -> Stats:
+    tz = request.app.state.settings.timezone
+    return services.get_stats(session, tz=tz, period=period)
+
+
+@router.get(
+    "/health",
+    tags=["health"],
+    summary="Health check",
+    description="Returns ok if the database answers a trivial query, 503 otherwise.",
+    responses={503: {"description": "Database unreachable"}},
+)
+def health(session: SessionDep) -> JSONResponse:
+    if services.database_is_reachable(session):
+        return JSONResponse({"status": "ok"})
+    return JSONResponse({"status": "unavailable"}, status_code=503)
+
+
+@router.get("/docs", include_in_schema=False)
+def api_docs() -> HTMLResponse:
+    """Swagger UI from files shipped with the app, so it works without internet access."""
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title="Call Issue Tracker - API docs",
+        swagger_js_url="/static/swagger-ui/swagger-ui-bundle.js",
+        swagger_css_url="/static/swagger-ui/swagger-ui.css",
+        swagger_favicon_url="data:,",
+    )
