@@ -65,7 +65,7 @@ def test_clinic_names_differing_by_case_or_spacing_are_the_same_clinic(client):
 
     assert response.json()["clinic"] == "Centro Medico Aurora"
     by_clinic = client.get("/api/stats").json()["by_clinic"]
-    assert by_clinic == [{"clinic": "Centro Medico Aurora", "count": 2}]
+    assert by_clinic == [{"clinic": "Centro Medico Aurora", "count": 2, "open": 2}]
 
 
 def test_list_returns_newest_first(client, session):

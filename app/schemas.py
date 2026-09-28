@@ -3,6 +3,7 @@
 import re
 import unicodedata
 from datetime import date, datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_core import PydanticCustomError
@@ -191,14 +192,36 @@ class IssuePage(BaseModel):
     pages: int
 
 
+class Period(StrEnum):
+    """Dashboard time window: the last 7, 30 or 90 local calendar days, or all time."""
+
+    DAYS_7 = "7"
+    DAYS_30 = "30"
+    DAYS_90 = "90"
+    ALL = "all"
+
+    @property
+    def days(self) -> int | None:
+        return None if self is Period.ALL else int(self.value)
+
+
 class CategoryCount(BaseModel):
     category: Category
     label: str
     count: int
+    # How many of those issues are still open.
+    open: int
 
 
 class ClinicCount(BaseModel):
     clinic: str
+    count: int
+    open: int
+
+
+class AgeCount(BaseModel):
+    # under_1_day, 1_to_7_days, 7_to_30_days or over_30_days
+    bucket: str
     count: int
 
 
@@ -214,15 +237,31 @@ class DayCount(BaseModel):
 
 
 class Stats(BaseModel):
-    total: int
+    period: Period
+
+    # Backlog: the open issues right now, whatever the period.
     open: int
+    open_critical_or_high: int
+    # Critical first.
+    open_by_severity: list[SeverityCount]
+    # How long the open issues have been waiting, youngest bucket first.
+    open_by_age: list[AgeCount]
+    # The oldest open critical issues, then the oldest open high ones (at most 5).
+    needs_attention: list[IssueOut]
+
+    # Flow: what happened in the period (all time when period is "all").
+    # Issues created in the period.
+    total: int
+    # Issues resolved in the period (by resolved_at).
     resolved: int
-    # Median of (resolved_at - created_at) over resolved issues; None if there are none.
+    # The same two counts for the period just before; None for "all".
+    previous_total: int | None
+    previous_resolved: int | None
+    # Median of (resolved_at - created_at) over issues resolved in the period.
     median_resolution_hours: float | None
+    # Issues created in the period, with how many of them are still open.
     by_category: list[CategoryCount]
     by_clinic: list[ClinicCount]
-    # Open issues only, critical first: what to fix next.
-    open_by_severity: list[SeverityCount]
-    open_critical_or_high: int
-    # One entry per local calendar day, oldest first, today last.
+    # One entry per local calendar day of the period (last 30 days for "all"),
+    # oldest first, today last.
     created_per_day: list[DayCount]

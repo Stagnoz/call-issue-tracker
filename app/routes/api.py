@@ -16,6 +16,7 @@ from app.schemas import (
     IssueListParams,
     IssueOut,
     IssuePage,
+    Period,
     ResolveRequest,
     Stats,
 )
@@ -141,12 +142,23 @@ def restore_issue(issue_id: int, session: SessionDep) -> Issue:
     response_model=Stats,
     tags=["stats"],
     summary="Dashboard statistics",
-    description="Total, open and resolved issues, median time to resolution, issues by "
-    "category (including zero counts) and by clinic, open issues by severity, and issues "
-    "created per day over the last 30 days (days in APP_TIMEZONE).",
+    description="Backlog, always the open issues right now: open count, open critical or "
+    "high, open by severity, open by age, and the oldest open critical/high issues. "
+    "Flow, for the period (`7`, `30` or `90` local calendar days including today, or "
+    "`all`, the default): issues created and resolved, the same counts for the previous "
+    "period, median time to resolution, issues by category (including zero counts) and by "
+    "clinic with how many are still open, and issues created per day (the last 30 days "
+    "for `all`). Days are in APP_TIMEZONE.",
 )
-def get_stats(request: Request, session: SessionDep) -> Stats:
-    return services.get_stats(session, tz=request.app.state.settings.timezone)
+def get_stats(
+    request: Request,
+    session: SessionDep,
+    period: Annotated[Period, Query(description="Time window for the flow numbers.")] = (
+        Period.ALL
+    ),
+) -> Stats:
+    tz = request.app.state.settings.timezone
+    return services.get_stats(session, tz=tz, period=period)
 
 
 @router.get(

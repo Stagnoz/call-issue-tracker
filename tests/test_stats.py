@@ -17,11 +17,13 @@ def test_stats_on_known_sample_set(client, sample_issues):
         ("patient_identification", 0),
     ]
     assert stats["by_category"][-1]["label"] == "Patient identification"
+    # Alpha and Beta each have one resolved issue.
     assert stats["by_clinic"] == [
-        {"clinic": "Clinic Alpha", "count": 3},
-        {"clinic": "Clinic Beta", "count": 3},
-        {"clinic": "Clinic Gamma", "count": 2},
+        {"clinic": "Clinic Alpha", "count": 3, "open": 2},
+        {"clinic": "Clinic Beta", "count": 3, "open": 2},
+        {"clinic": "Clinic Gamma", "count": 2, "open": 2},
     ]
+    assert [row["open"] for row in stats["by_category"]] == [3, 2, 0, 1, 0, 0]
 
 
 def test_stats_on_empty_database(client):

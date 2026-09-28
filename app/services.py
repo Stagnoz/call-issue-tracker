@@ -8,26 +8,34 @@ import math
 import statistics
 from collections import Counter
 from dataclasses import dataclass
-from datetime import UTC, datetime, time, timedelta, tzinfo
+from datetime import UTC, date, datetime, time, timedelta, tzinfo
 
-from sqlalchemy import func, select, text
+from sqlalchemy import ColumnElement, case, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import InstrumentedAttribute, Session
 from sqlalchemy.sql import Select
 
 from app.models import Category, Clinic, Issue, Severity, Status
 from app.schemas import (
+    AgeCount,
     CategoryCount,
     ClinicCount,
     DayCount,
     IssueCreate,
     IssueFilters,
+    IssueOut,
+    Period,
     SeverityCount,
     Stats,
 )
 
 PER_PAGE = 25
+# Days in the per-day chart when the dashboard shows all time.
 DAILY_WINDOW_DAYS = 30
+NEEDS_ATTENTION_LIMIT = 5
+# Age buckets for open issues, by upper bound in days; older ones go to OLDEST_AGE_BUCKET.
+AGE_BUCKETS = (("under_1_day", 1), ("1_to_7_days", 7), ("7_to_30_days", 30))
+OLDEST_AGE_BUCKET = "over_30_days"
 
 # Soft-deleted issues are excluded from every list, count and lookup.
 NOT_DELETED = Issue.deleted_at.is_(None)
@@ -227,50 +235,88 @@ def database_is_reachable(session: Session) -> bool:
     return True
 
 
-def get_stats(session: Session, now: datetime | None = None, tz: tzinfo = UTC) -> Stats:
-    """Dashboard numbers, deleted issues excluded. Every category and severity
-    appears, with 0 if it has no issues. Category and clinic breakdowns are sorted
-    by count descending, ties alphabetically. Days for the daily counts are
-    calendar days in tz."""
-    total = session.scalar(select(func.count(Issue.id)).where(NOT_DELETED)) or 0
-    open_count = (
-        session.scalar(select(func.count(Issue.id)).where(NOT_DELETED, Issue.status == Status.OPEN))
-        or 0
-    )
+def _count(session: Session, *conditions: ColumnElement[bool]) -> int:
+    """Number of issues that are not deleted and match every condition."""
+    return session.scalar(select(func.count(Issue.id)).where(NOT_DELETED, *conditions)) or 0
 
-    category_rows = session.execute(
-        select(Issue.category, func.count(Issue.id)).where(NOT_DELETED).group_by(Issue.category)
+
+def _local_midnight(day: date, tz: tzinfo) -> datetime:
+    return datetime.combine(day, time.min, tzinfo=tz)
+
+
+def _between(
+    column: InstrumentedAttribute, start: datetime | None, end: datetime | None = None
+) -> list[ColumnElement[bool]]:
+    """Conditions for start <= column < end. A missing bound is left out."""
+    conditions = []
+    if start is not None:
+        conditions.append(column >= start)
+    if end is not None:
+        conditions.append(column < end)
+    return conditions
+
+
+def _age_bucket(age: timedelta) -> str:
+    for name, max_days in AGE_BUCKETS:
+        if age < timedelta(days=max_days):
+            return name
+    return OLDEST_AGE_BUCKET
+
+
+def _open_by_age(session: Session, now: datetime) -> list[AgeCount]:
+    """Open issues by how long they have been waiting. Computed in Python: the
+    open backlog is small, and SQLite has no portable date difference."""
+    created = session.scalars(
+        select(Issue.created_at).where(NOT_DELETED, Issue.status == Status.OPEN)
     )
-    counts_by_category = {category: count for category, count in category_rows}
-    by_category = [
-        CategoryCount(
-            category=category, label=category.label, count=counts_by_category.get(category, 0)
+    counts = Counter(_age_bucket(now - created_at) for created_at in created)
+    buckets = [name for name, _ in AGE_BUCKETS] + [OLDEST_AGE_BUCKET]
+    return [AgeCount(bucket=name, count=counts.get(name, 0)) for name in buckets]
+
+
+def _needs_attention(session: Session) -> list[IssueOut]:
+    """Open critical issues, then open high ones, oldest first within each."""
+    critical_first = case((Issue.severity == Severity.CRITICAL, 0), else_=1)
+    statement = (
+        select(Issue)
+        .where(
+            NOT_DELETED,
+            Issue.status == Status.OPEN,
+            Issue.severity.in_((Severity.CRITICAL, Severity.HIGH)),
         )
-        for category in Category
-    ]
-    by_category.sort(key=lambda item: (-item.count, item.label))
-
-    clinic_rows = session.execute(
-        select(Clinic.name, func.count(Issue.id))
-        .join(Issue.clinic)
-        .where(NOT_DELETED)
-        .group_by(Clinic.id)
+        .order_by(critical_first, Issue.created_at, Issue.id)
+        .limit(NEEDS_ATTENTION_LIMIT)
     )
-    by_clinic = [ClinicCount(clinic=name, count=count) for name, count in clinic_rows]
-    by_clinic.sort(key=lambda item: (-item.count, item.clinic.casefold()))
+    return [IssueOut.model_validate(issue) for issue in session.scalars(statement)]
 
-    # SQLite has no MEDIAN function, so the durations are computed here.
-    resolved_rows = session.execute(
-        select(Issue.created_at, Issue.resolved_at).where(
-            NOT_DELETED, Issue.status == Status.RESOLVED
-        )
-    )
-    hours_to_resolve = [
-        (resolved_at - created_at).total_seconds() / 3600
-        for created_at, resolved_at in resolved_rows
-    ]
-    median_hours = statistics.median(hours_to_resolve) if hours_to_resolve else None
 
+def get_stats(
+    session: Session,
+    now: datetime | None = None,
+    tz: tzinfo = UTC,
+    period: Period = Period.ALL,
+) -> Stats:
+    """Dashboard numbers, deleted issues excluded.
+
+    Backlog numbers (open, by severity, by age, needs attention) describe the
+    open issues right now, whatever the period. Flow numbers (created, resolved,
+    median, by category, by clinic, per day) cover the period: the last N
+    calendar days in tz, today included, or all time. Every category and
+    severity appears, with 0 if it has no issues. Category and clinic breakdowns
+    are sorted by count descending, ties alphabetically.
+    """
+    now = now or utc_now()
+    today = now.astimezone(tz).date()
+    chart_days = period.days or DAILY_WINDOW_DAYS
+    first_day = today - timedelta(days=chart_days - 1)
+    if period.days is None:
+        start = previous_start = None
+    else:
+        start = _local_midnight(first_day, tz)
+        previous_start = _local_midnight(first_day - timedelta(days=period.days), tz)
+
+    # Backlog
+    open_count = _count(session, Issue.status == Status.OPEN)
     severity_rows = session.execute(
         select(Issue.severity, func.count(Issue.id))
         .where(NOT_DELETED, Issue.status == Status.OPEN)
@@ -285,27 +331,83 @@ def get_stats(session: Session, now: datetime | None = None, tz: tzinfo = UTC) -
         Severity.HIGH, 0
     )
 
-    # Issues created per local day over the last DAILY_WINDOW_DAYS days, today included.
-    today = (now or utc_now()).astimezone(tz).date()
-    first_day = today - timedelta(days=DAILY_WINDOW_DAYS - 1)
-    window_start = datetime.combine(first_day, time.min, tzinfo=tz)
+    # Flow
+    created_in_period = _between(Issue.created_at, start)
+    resolved_in_period = [Issue.status == Status.RESOLVED, *_between(Issue.resolved_at, start)]
+    total = _count(session, *created_in_period)
+    resolved = _count(session, *resolved_in_period)
+    previous_total = previous_resolved = None
+    if period.days is not None:
+        previous_total = _count(session, *_between(Issue.created_at, previous_start, start))
+        previous_resolved = _count(
+            session,
+            Issue.status == Status.RESOLVED,
+            *_between(Issue.resolved_at, previous_start, start),
+        )
+
+    # SQLite has no MEDIAN function, so the durations are computed here.
+    resolved_rows = session.execute(
+        select(Issue.created_at, Issue.resolved_at).where(NOT_DELETED, *resolved_in_period)
+    )
+    hours_to_resolve = [
+        (resolved_at - created_at).total_seconds() / 3600
+        for created_at, resolved_at in resolved_rows
+    ]
+    median_hours = statistics.median(hours_to_resolve) if hours_to_resolve else None
+
+    # count(...) FILTER (WHERE ...): the open issues within each group.
+    open_in_group = func.count(Issue.id).filter(Issue.status == Status.OPEN)
+
+    category_rows = session.execute(
+        select(Issue.category, func.count(Issue.id), open_in_group)
+        .where(NOT_DELETED, *created_in_period)
+        .group_by(Issue.category)
+    )
+    counts_by_category = {category: (count, open_) for category, count, open_ in category_rows}
+    by_category = []
+    for category in Category:
+        count, open_ = counts_by_category.get(category, (0, 0))
+        by_category.append(
+            CategoryCount(category=category, label=category.label, count=count, open=open_)
+        )
+    by_category.sort(key=lambda item: (-item.count, item.label))
+
+    clinic_rows = session.execute(
+        select(Clinic.name, func.count(Issue.id), open_in_group)
+        .join(Issue.clinic)
+        .where(NOT_DELETED, *created_in_period)
+        .group_by(Clinic.id)
+    )
+    by_clinic = [
+        ClinicCount(clinic=name, count=count, open=open_) for name, count, open_ in clinic_rows
+    ]
+    by_clinic.sort(key=lambda item: (-item.count, item.clinic.casefold()))
+
+    # Issues created per local day, today included.
     created = session.scalars(
-        select(Issue.created_at).where(NOT_DELETED, Issue.created_at >= window_start)
+        select(Issue.created_at).where(
+            NOT_DELETED, *_between(Issue.created_at, _local_midnight(first_day, tz))
+        )
     )
     per_day = Counter(created_at.astimezone(tz).date() for created_at in created)
     created_per_day = [
         DayCount(day=day, count=per_day.get(day, 0))
-        for day in (first_day + timedelta(days=offset) for offset in range(DAILY_WINDOW_DAYS))
+        for day in (first_day + timedelta(days=offset) for offset in range(chart_days))
     ]
 
     return Stats(
-        total=total,
+        period=period,
         open=open_count,
-        resolved=total - open_count,
+        open_critical_or_high=open_critical_or_high,
+        open_by_severity=open_by_severity,
+        open_by_age=_open_by_age(session, now),
+        needs_attention=_needs_attention(session),
+        total=total,
+        resolved=resolved,
+        previous_total=previous_total,
+        previous_resolved=previous_resolved,
         median_resolution_hours=median_hours,
         by_category=by_category,
         by_clinic=by_clinic,
-        open_by_severity=open_by_severity,
-        open_critical_or_high=open_critical_or_high,
         created_per_day=created_per_day,
     )
