@@ -256,27 +256,33 @@ every push to `develop`:
 
 ## Future improvements
 
-- Authentication (company SSO) and roles, then CSRF tokens on forms.
-- An audit log / status history: who resolved or reopened what, and when.
-- Editing an issue after creation (today only the status changes, through resolve and
-  reopen). I left it out on purpose: edits should come with the audit log, so the
-  history of an issue cannot be rewritten silently.
-- Assignee and comments on issues.
-- Automatic issue creation from the call pipeline through the API or a webhook, with
+The next step is daily internal use: more people, more data, and issues arriving from
+the systems around the assistant rather than only by hand.
+
+**More users**
+
+- Company SSO and roles, with `created_by` / `resolved_by` on each issue and CSRF
+  tokens on forms.
+- An audit log of every change. Editing issues, assignees and comments come after it,
+  so the history of an issue can never be rewritten silently.
+
+**Scale**
+
+- Postgres with Alembic migrations, then several workers or instances behind a proxy.
+- Indexes on `created_at` and the filtered columns, cursor-based pagination, and
+  Unicode-aware search (SQLite folds case for ASCII letters only).
+
+**Integration with existing systems**
+
+- The call pipeline creates issues through the API, with a per-service key and
   deduplication by `call_id`.
-- Root-cause tags separate from the symptom category (LLM reasoning, speech-to-text,
-  text-to-speech, management-software integration, flow design).
-- Linking each issue to the assistant or prompt version, to catch regressions after a
-  release.
-- Category and severity suggested by an LLM from the description.
-- Detecting and redacting names and health details in descriptions (the current checks
-  catch phone numbers, emails and tax codes only).
-- Postgres and Alembic migrations once there are several concurrent writers.
-- A data retention policy for issues (GDPR).
-- An issue detail page with a link to the call recording or transcript, and a
-  dashboard scoped to one clinic.
-- Unicode-aware search (SQLite's case-insensitive matching covers ASCII letters only)
-  and cursor-based pagination for very large lists.
+- Each issue links to the call recording or transcript and to the assistant or prompt
+  version, with a root-cause field (speech-to-text, LLM, text-to-speech, practice
+  software integration, flow design). The dashboard then shows issues by cause and by
+  release, so the team fixes the causes that produce the most issues first.
+- Alerts for critical issues in the team chat, and optional sync with the ticketing tool.
+- Patient data: automatic detection of names and health details (today only phone
+  numbers, emails and tax codes), and a retention policy.
 
 ## How this was built
 
