@@ -123,6 +123,20 @@ class ResolveRequest(BaseModel):
         return reject_personal_data(value)
 
 
+class DeleteRequest(BaseModel):
+    """Body when deleting: why the issue should not exist (required)."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    reason: str = Field(min_length=3, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def check_reason(cls, value: str) -> str:
+        reject_invisible_characters(value)
+        return reject_personal_data(value)
+
+
 class IssueFilters(BaseModel):
     """Optional list filters. They combine with AND; an empty value means no filter."""
 

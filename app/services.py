@@ -29,6 +29,9 @@ from app.schemas import (
 PER_PAGE = 25
 DAILY_WINDOW_DAYS = 30
 
+# Soft-deleted issues are excluded from every list, count and lookup.
+NOT_DELETED = Issue.deleted_at.is_(None)
+
 
 @dataclass
 class Page:
@@ -68,7 +71,16 @@ def get_or_create_clinic(session: Session, name: str) -> Clinic:
 
 
 def list_clinic_names(session: Session) -> list[str]:
-    return list(session.scalars(select(Clinic.name).order_by(Clinic.name_key)))
+    """Clinics with at least one issue that is not deleted. A clinic created by a
+    mistyped issue disappears from the suggestions once that issue is deleted."""
+    statement = (
+        select(Clinic.name)
+        .join(Issue.clinic)
+        .where(NOT_DELETED)
+        .group_by(Clinic.id)
+        .order_by(Clinic.name_key)
+    )
+    return list(session.scalars(statement))
 
 
 def create_issue(session: Session, data: IssueCreate, now: datetime | None = None) -> Issue:
@@ -88,6 +100,7 @@ def create_issue(session: Session, data: IssueCreate, now: datetime | None = Non
 
 
 def _apply_filters(statement: Select, filters: IssueFilters) -> Select:
+    statement = statement.where(NOT_DELETED)
     if filters.clinic is not None:
         key = clinic_key(filters.clinic)
         statement = statement.join(Issue.clinic).where(Clinic.name_key == key)
@@ -131,7 +144,11 @@ def list_all_issues(session: Session, filters: IssueFilters) -> list[Issue]:
 
 
 def get_issue(session: Session, issue_id: int) -> Issue | None:
-    return session.get(Issue, issue_id)
+    """The issue, or None if it does not exist or is deleted."""
+    issue = session.get(Issue, issue_id)
+    if issue is None or issue.deleted_at is not None:
+        return None
+    return issue
 
 
 def resolve_issue(
@@ -143,7 +160,7 @@ def resolve_issue(
     Idempotent: resolving an already resolved issue changes nothing, so
     resolved_at and the note keep the values of the first resolution.
     """
-    issue = session.get(Issue, issue_id)
+    issue = get_issue(session, issue_id)
     if issue is None:
         return None
     if issue.status != Status.RESOLVED:
@@ -158,13 +175,46 @@ def reopen_issue(session: Session, issue_id: int) -> Issue | None:
     """Move a resolved issue back to open, clearing resolved_at and the note.
     Returns None if the issue does not exist. Reopening an open issue changes nothing.
     """
-    issue = session.get(Issue, issue_id)
+    issue = get_issue(session, issue_id)
     if issue is None:
         return None
     if issue.status != Status.OPEN:
         issue.status = Status.OPEN
         issue.resolved_at = None
         issue.resolution_note = None
+        session.commit()
+    return issue
+
+
+def delete_issue(
+    session: Session, issue_id: int, reason: str, now: datetime | None = None
+) -> Issue | None:
+    """Soft delete: hide the issue everywhere and record why. Returns None if the
+    issue does not exist.
+
+    Idempotent: deleting an already deleted issue changes nothing, so
+    deleted_at and the reason keep the values of the first deletion.
+    """
+    issue = session.get(Issue, issue_id)
+    if issue is None:
+        return None
+    if issue.deleted_at is None:
+        issue.deleted_at = now or utc_now()
+        issue.deletion_reason = reason
+        session.commit()
+    return issue
+
+
+def restore_issue(session: Session, issue_id: int) -> Issue | None:
+    """Undo a delete: the issue comes back unchanged, with its status and dates.
+    Returns None if the issue does not exist. Restoring a visible issue changes nothing.
+    """
+    issue = session.get(Issue, issue_id)
+    if issue is None:
+        return None
+    if issue.deleted_at is not None:
+        issue.deleted_at = None
+        issue.deletion_reason = None
         session.commit()
     return issue
 
@@ -178,16 +228,18 @@ def database_is_reachable(session: Session) -> bool:
 
 
 def get_stats(session: Session, now: datetime | None = None, tz: tzinfo = UTC) -> Stats:
-    """Dashboard numbers. Every category and severity appears, with 0 if it has
-    no issues. Category and clinic breakdowns are sorted by count descending,
-    ties alphabetically. Days for the daily counts are calendar days in tz."""
-    total = session.scalar(select(func.count(Issue.id))) or 0
+    """Dashboard numbers, deleted issues excluded. Every category and severity
+    appears, with 0 if it has no issues. Category and clinic breakdowns are sorted
+    by count descending, ties alphabetically. Days for the daily counts are
+    calendar days in tz."""
+    total = session.scalar(select(func.count(Issue.id)).where(NOT_DELETED)) or 0
     open_count = (
-        session.scalar(select(func.count(Issue.id)).where(Issue.status == Status.OPEN)) or 0
+        session.scalar(select(func.count(Issue.id)).where(NOT_DELETED, Issue.status == Status.OPEN))
+        or 0
     )
 
     category_rows = session.execute(
-        select(Issue.category, func.count(Issue.id)).group_by(Issue.category)
+        select(Issue.category, func.count(Issue.id)).where(NOT_DELETED).group_by(Issue.category)
     )
     counts_by_category = {category: count for category, count in category_rows}
     by_category = [
@@ -199,14 +251,19 @@ def get_stats(session: Session, now: datetime | None = None, tz: tzinfo = UTC) -
     by_category.sort(key=lambda item: (-item.count, item.label))
 
     clinic_rows = session.execute(
-        select(Clinic.name, func.count(Issue.id)).join(Issue.clinic).group_by(Clinic.id)
+        select(Clinic.name, func.count(Issue.id))
+        .join(Issue.clinic)
+        .where(NOT_DELETED)
+        .group_by(Clinic.id)
     )
     by_clinic = [ClinicCount(clinic=name, count=count) for name, count in clinic_rows]
     by_clinic.sort(key=lambda item: (-item.count, item.clinic.casefold()))
 
     # SQLite has no MEDIAN function, so the durations are computed here.
     resolved_rows = session.execute(
-        select(Issue.created_at, Issue.resolved_at).where(Issue.status == Status.RESOLVED)
+        select(Issue.created_at, Issue.resolved_at).where(
+            NOT_DELETED, Issue.status == Status.RESOLVED
+        )
     )
     hours_to_resolve = [
         (resolved_at - created_at).total_seconds() / 3600
@@ -216,7 +273,7 @@ def get_stats(session: Session, now: datetime | None = None, tz: tzinfo = UTC) -
 
     severity_rows = session.execute(
         select(Issue.severity, func.count(Issue.id))
-        .where(Issue.status == Status.OPEN)
+        .where(NOT_DELETED, Issue.status == Status.OPEN)
         .group_by(Issue.severity)
     )
     open_counts = {severity: count for severity, count in severity_rows}
@@ -232,7 +289,9 @@ def get_stats(session: Session, now: datetime | None = None, tz: tzinfo = UTC) -
     today = (now or utc_now()).astimezone(tz).date()
     first_day = today - timedelta(days=DAILY_WINDOW_DAYS - 1)
     window_start = datetime.combine(first_day, time.min, tzinfo=tz)
-    created = session.scalars(select(Issue.created_at).where(Issue.created_at >= window_start))
+    created = session.scalars(
+        select(Issue.created_at).where(NOT_DELETED, Issue.created_at >= window_start)
+    )
     per_day = Counter(created_at.astimezone(tz).date() for created_at in created)
     created_per_day = [
         DayCount(day=day, count=per_day.get(day, 0))

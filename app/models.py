@@ -76,6 +76,10 @@ class Issue(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     # Optional "what was fixed" note, set when resolving and cleared on reopen.
     resolution_note: Mapped[str | None] = mapped_column(String(500))
+    # Soft delete: the row is kept (with the reason) but hidden everywhere, and
+    # it can be restored. Nothing is ever removed from the database.
+    deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    deletion_reason: Mapped[str | None] = mapped_column(String(500))
 
     # Every view of an issue shows its clinic, so load it in the same query.
     clinic: Mapped[Clinic] = relationship(back_populates="issues", lazy="joined")

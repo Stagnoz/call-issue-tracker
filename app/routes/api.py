@@ -4,13 +4,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
 
 from app import services
 from app.db import get_session
 from app.models import Issue
 from app.schemas import (
+    DeleteRequest,
     IssueCreate,
     IssueListParams,
     IssueOut,
@@ -97,6 +98,39 @@ def resolve_issue(issue_id: int, session: SessionDep, data: ResolveRequest | Non
 )
 def reopen_issue(issue_id: int, session: SessionDep) -> Issue:
     issue = services.reopen_issue(session, issue_id)
+    if issue is None:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    return issue
+
+
+@router.post(
+    "/api/issues/{issue_id}/delete",
+    status_code=204,
+    tags=["issues"],
+    summary="Delete an issue (soft delete)",
+    description='Body: {"reason": "why this issue should not exist"}, required. The issue is '
+    "hidden from lists, filters, the CSV and the statistics, and GET returns 404, but it stays "
+    "in the database and can be restored. Idempotent: deleting a deleted issue keeps the first "
+    "reason. A POST action rather than DELETE, so the reason travels in a body, not in the URL.",
+    responses={404: {"description": "Issue not found"}},
+)
+def delete_issue(issue_id: int, data: DeleteRequest, session: SessionDep) -> Response:
+    if services.delete_issue(session, issue_id, reason=data.reason) is None:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    return Response(status_code=204)
+
+
+@router.post(
+    "/api/issues/{issue_id}/restore",
+    response_model=IssueOut,
+    tags=["issues"],
+    summary="Restore a deleted issue",
+    description="Undoes a delete: the issue comes back with its status and dates unchanged. "
+    "Restoring an issue that is not deleted returns it unchanged.",
+    responses={404: {"description": "Issue not found"}},
+)
+def restore_issue(issue_id: int, session: SessionDep) -> Issue:
+    issue = services.restore_issue(session, issue_id)
     if issue is None:
         raise HTTPException(status_code=404, detail="Issue not found")
     return issue
