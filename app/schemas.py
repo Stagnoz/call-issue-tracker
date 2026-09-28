@@ -1,10 +1,69 @@
 """Pydantic models: input validation and the shape of API responses."""
 
+import re
+import unicodedata
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic_core import PydanticCustomError
 
 from app.models import Category, Severity, Status
+
+# Format rules for the free-text fields.
+CALL_ID_PATTERN = re.compile(r"[A-Za-z0-9._:-]+")
+# Letters (accented ones too), digits, spaces and a little punctuation.
+CLINIC_PATTERN = re.compile(r"(?:[^\W_]|[ .,'’()&/-])+")
+
+# Personal data that must never be stored in an issue (GDPR: health context).
+EMAIL_PATTERN = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+# Italian tax code (codice fiscale), including the letters that replace digits
+# in "omocodia" cases. A match must also contain a digit, so words never match.
+TAX_CODE_PATTERN = re.compile(
+    r"\b[A-Z]{6}[0-9LMNP-V]{2}[A-EHLMPR-T][0-9LMNP-V]{2}[A-Z][0-9LMNP-V]{3}[A-Z]\b",
+    re.IGNORECASE,
+)
+# Phone numbers: 9 or more digits starting with a country code (+ or 00), 0
+# (landline) or 3 (mobile), optionally separated by single spaces or dashes.
+# Dates such as 2026-09-28 14:05, 28/09/2026 or 03.10.2026 do not match.
+PHONE_PATTERN = re.compile(r"(?<![\w+])(?:(?:\+|00)\d{1,3}[ -]?)?[03]\d(?:[ -]?\d){7,}(?!\w)")
+
+# Unicode categories of control, invisible formatting (zero-width, bidi
+# overrides), private-use, surrogate and unassigned characters.
+INVISIBLE_CATEGORIES = {"Cc", "Cf", "Co", "Cs", "Cn"}
+
+
+def reject_invisible_characters(value: str, allow_line_breaks: bool = False) -> str:
+    allowed = {"\n", "\r", "\t"} if allow_line_breaks else set()
+    for char in value:
+        if char not in allowed and unicodedata.category(char) in INVISIBLE_CATEGORIES:
+            raise PydanticCustomError(
+                "invisible_characters", "Remove control or invisible characters."
+            )
+    return value
+
+
+PERSONAL_DATA_KINDS = {
+    "email": "an email address",
+    "tax_code": "an Italian tax code",
+    "phone": "a phone number",
+}
+
+
+def reject_personal_data(value: str) -> str:
+    """Reject values that look like an email address, a tax code or a phone number."""
+    if EMAIL_PATTERN.search(value):
+        kind = "email"
+    elif any(re.search(r"\d", match) for match in TAX_CODE_PATTERN.findall(value)):
+        kind = "tax_code"
+    elif PHONE_PATTERN.search(value):
+        kind = "phone"
+    else:
+        return value
+    raise PydanticCustomError(
+        "personal_data",
+        "Remove personal data: this looks like {what}. Reference the call by call_id.",
+        {"kind": kind, "what": PERSONAL_DATA_KINDS[kind]},
+    )
 
 
 class IssueCreate(BaseModel):
@@ -18,6 +77,33 @@ class IssueCreate(BaseModel):
     description: str = Field(min_length=5, max_length=2000)
     category: Category
     severity: Severity
+
+    # These run after trimming and the length checks.
+    @field_validator("call_id")
+    @classmethod
+    def check_call_id(cls, value: str) -> str:
+        reject_invisible_characters(value)
+        if not CALL_ID_PATTERN.fullmatch(value):
+            raise PydanticCustomError(
+                "call_id_format", "Use only letters, digits and - _ . : (no spaces)."
+            )
+        return reject_personal_data(value)
+
+    @field_validator("clinic")
+    @classmethod
+    def check_clinic(cls, value: str) -> str:
+        reject_invisible_characters(value)
+        if not CLINIC_PATTERN.fullmatch(value):
+            raise PydanticCustomError(
+                "clinic_format", "Use letters, digits, spaces and . , ' - ( ) & / only."
+            )
+        return reject_personal_data(value)
+
+    @field_validator("description")
+    @classmethod
+    def check_description(cls, value: str) -> str:
+        reject_invisible_characters(value, allow_line_breaks=True)
+        return reject_personal_data(value)
 
 
 class IssueFilters(BaseModel):
