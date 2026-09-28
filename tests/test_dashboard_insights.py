@@ -128,3 +128,53 @@ def test_api_stats_accepts_a_period(client, sample_issues):
 
 def test_api_stats_rejects_an_unknown_period(client):
     assert client.get("/api/stats", params={"period": "14"}).status_code == 422
+
+
+def test_dashboard_page_shows_the_selected_period(client, sample_issues):
+    response = client.get("/dashboard", params={"period": "7"})
+    text = response.text
+
+    assert response.status_code == 200
+    assert 'href="/dashboard?period=7" aria-current="true">7 days</a>' in text
+    assert '<h2 id="flow">Last 7 days</h2>' in text
+    assert "New issues" in text
+    # Either "vs previous 7 days" or "same as previous 7 days", depending on the clock.
+    assert "previous 7 days" in text
+    assert text.count('<span class="daily-bar"') == 7
+
+
+def test_dashboard_all_time_has_no_comparison(client, sample_issues):
+    text = client.get("/dashboard").text
+
+    assert 'href="/dashboard" aria-current="true">All time</a>' in text
+    assert "Total issues" in text
+    assert "previous" not in text
+
+
+def test_dashboard_with_unknown_period_shows_all_time(client, sample_issues):
+    response = client.get("/dashboard", params={"period": "14"})
+
+    assert response.status_code == 422
+    assert "Unknown period; showing all time." in response.text
+    assert "Total issues" in response.text
+
+
+def test_dashboard_lists_issues_that_need_attention(client, sample_issues):
+    text = client.get("/dashboard").text
+
+    # Sample row 3 is the only critical issue, so it comes first.
+    first = text.index("Needs attention")
+    assert text.index('href="/issues?status=open&amp;q=call-0003"', first) > first
+    assert "open for" in text
+
+
+def test_dashboard_bars_split_open_and_resolved(client, sample_issues):
+    text = client.get("/dashboard").text
+
+    # Booking: 4 issues, 3 still open.
+    assert 'href="/issues?status=open&amp;category=booking">3 open</a>' in text
+    assert "bar-fill-resolved" in text
+
+
+def test_dashboard_without_urgent_issues(client):
+    assert "No open critical or high issues." in client.get("/dashboard").text
