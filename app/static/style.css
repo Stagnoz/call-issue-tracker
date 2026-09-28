@@ -291,6 +291,16 @@ main {
   border-color: var(--brand);
 }
 
+.button-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.button-danger:hover {
+  background: #912018;
+  border-color: #912018;
+}
+
 .button-small {
   font-size: 0.8rem;
   padding: 0.3rem 0.6rem;
@@ -552,6 +562,20 @@ textarea:focus {
 
 .link-button:hover {
   color: var(--navy);
+}
+
+.link-danger,
+.link-danger:hover {
+  color: var(--danger);
+}
+
+.delete-issue[open] summary {
+  background: none;
+}
+
+.inline-form {
+  display: inline;
+  margin-left: 0.5rem;
 }
 
 .pagination {

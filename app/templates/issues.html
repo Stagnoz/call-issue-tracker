@@ -16,10 +16,23 @@
     </div>
   </div>
 
-  {% if notice %}<div class="notice" role="status">{{ t(notice.key, id=notice.id) }}</div>{% endif %}
+  {% if notice %}
+    <div class="notice" role="status">
+      {{ t(notice.key, id=notice.id) }}
+      {% if notice.key == "notice.deleted" %}
+        <form class="inline-form" method="post" action="/issues/{{ notice.id }}/restore">
+          <input type="hidden" name="return_query" value="{{ return_query }}">
+          <button class="link-button" type="submit">{{ t("restore.submit") }}</button>
+        </form>
+      {% endif %}
+    </div>
+  {% endif %}
   {% if filter_error %}<div class="notice notice-error" role="alert">{{ t("notice.filters_invalid") }}</div>{% endif %}
   {% if note_error %}
     <div class="notice notice-error" role="alert">{{ t("notice.note_invalid", id=note_error.issue_id) }}</div>
+  {% endif %}
+  {% if delete_error %}
+    <div class="notice notice-error" role="alert">{{ t("notice.delete_invalid", id=delete_error.issue_id) }}</div>
   {% endif %}
 
   <form class="card filters" method="get" action="/issues" aria-label="{{ t('filters.label') }}">
@@ -107,6 +120,21 @@
                       </form>
                     </details>
                   {% endif %}
+                  {% set delete_failed = delete_error and delete_error.issue_id == issue.id %}
+                  <details class="resolve delete-issue"{% if delete_failed %} open{% endif %}>
+                    <summary class="link-button link-danger">{{ t("delete.open") }}</summary>
+                    <form class="resolve-form" method="post" action="/issues/{{ issue.id }}/delete">
+                      <input type="hidden" name="return_query" value="{{ return_query }}">
+                      <label for="reason-{{ issue.id }}">{{ t("delete.reason_label") }}</label>
+                      <input id="reason-{{ issue.id }}" name="reason" required minlength="3" maxlength="500"
+                             value="{{ delete_error.value if delete_failed else '' }}"
+                             {% if delete_failed %}aria-invalid="true" aria-describedby="reason-{{ issue.id }}-error"{% endif %}>
+                      {% if delete_failed %}
+                        <p class="field-error" id="reason-{{ issue.id }}-error">{{ delete_error.message }}</p>
+                      {% endif %}
+                      <button class="button button-small button-danger" type="submit">{{ t("delete.submit") }}</button>
+                    </form>
+                  </details>
                 </div>
               </td>
               <td data-label="{{ t('field.description') }}" class="description">{{ issue.description }}</td>

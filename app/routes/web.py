@@ -18,7 +18,13 @@ from sqlalchemy.orm import Session
 from app import i18n, services
 from app.db import get_session
 from app.models import Category, Issue, Severity, Status
-from app.schemas import IssueCreate, IssueFilters, IssueListParams, ResolveRequest
+from app.schemas import (
+    DeleteRequest,
+    IssueCreate,
+    IssueFilters,
+    IssueListParams,
+    ResolveRequest,
+)
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 
@@ -87,7 +93,7 @@ def filter_query(filters: IssueFilters, **extra: object) -> str:
 
 def list_notice(request: Request) -> dict | None:
     """Confirmation after a Post/Redirect/Get, e.g. ?created=42, as a translation key and id."""
-    for event in ("created", "resolved", "reopened"):
+    for event in ("created", "resolved", "reopened", "deleted", "restored"):
         value = request.query_params.get(event, "")
         if value.isdigit():
             return {"key": f"notice.{event}", "id": int(value)}
@@ -109,6 +115,7 @@ def render_issue_list(
     params: IssueListParams,
     filter_error: bool = False,
     note_error: dict | None = None,
+    delete_error: dict | None = None,
     status_code: int = 200,
 ) -> HTMLResponse:
     page = services.list_issues(session, params, page=params.page)
@@ -134,6 +141,7 @@ def render_issue_list(
         "notice": list_notice(request),
         "filter_error": filter_error,
         "note_error": note_error,
+        "delete_error": delete_error,
     }
     return render(request, "issues.html", context, status_code=status_code)
 
@@ -260,6 +268,48 @@ def reopen_issue_from_form(
     if issue is None:
         return issue_not_found(request, issue_id)
     return back_to_list(return_query, reopened=issue.id)
+
+
+@router.post("/issues/{issue_id}/delete")
+def delete_issue_from_form(
+    request: Request,
+    issue_id: int,
+    session: SessionDep,
+    return_query: Annotated[str, Form()] = "",
+    reason: Annotated[str, Form()] = "",
+) -> Response:
+    try:
+        data = DeleteRequest(reason=reason)
+    except ValidationError as exc:
+        # Same list again, with the delete form open, the error and the input.
+        params, _ = parse_list_params(dict(kept_list_query(return_query)))
+        delete_error = {
+            "issue_id": issue_id,
+            "message": i18n.error_message(exc.errors()[0], i18n.get_language(request)),
+            "value": reason,
+        }
+        return render_issue_list(
+            request, session, params, delete_error=delete_error, status_code=422
+        )
+
+    issue = services.delete_issue(session, issue_id, reason=data.reason)
+    if issue is None:
+        return issue_not_found(request, issue_id)
+    # The confirmation on the list carries an Undo button (restore).
+    return back_to_list(return_query, deleted=issue.id)
+
+
+@router.post("/issues/{issue_id}/restore")
+def restore_issue_from_form(
+    request: Request,
+    issue_id: int,
+    session: SessionDep,
+    return_query: Annotated[str, Form()] = "",
+) -> Response:
+    issue = services.restore_issue(session, issue_id)
+    if issue is None:
+        return issue_not_found(request, issue_id)
+    return back_to_list(return_query, restored=issue.id)
 
 
 # The CSV is data for spreadsheets, not interface text, so it is not translated.
