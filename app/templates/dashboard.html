@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% macro bar(label, count, max_count, href) -%}
+  <li class="bar-row">
+    <a class="bar-label" href="{{ href }}">{{ label }}</a>
+    <div class="bar-track" aria-hidden="true">
+      <div class="bar-fill" style="width: {{ (count / max_count * 100) | round(1) }}%"></div>
+    </div>
+    <span class="bar-count">{{ count }}</span>
+  </li>
+{%- endmacro %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Dashboard</h1>
+      <p class="subtitle">Where the assistant goes wrong, across all recorded issues.</p>
+    </div>
+  </div>
+
+  <div class="stat-grid">
+    <p class="card stat">
+      <span class="stat-label">Total issues</span>
+      <span class="stat-value">{{ stats.total }}</span>
+    </p>
+    <p class="card stat stat-highlight">
+      <span class="stat-label">Open issues</span>
+      <span class="stat-value">{{ stats.open }}</span>
+    </p>
+    <p class="card stat">
+      <span class="stat-label">Resolved</span>
+      <span class="stat-value">{{ stats.resolved }}</span>
+    </p>
+  </div>
+
+  <div class="dashboard-grid">
+    <section class="card" aria-labelledby="by-category">
+      <h2 id="by-category">Issues by category</h2>
+      <ul class="bars">
+        {% for row in stats.by_category %}
+          {{ bar(row.label, row.count, category_max, "/issues?category=" ~ row.category.value) }}
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="card" aria-labelledby="by-clinic">
+      <h2 id="by-clinic">Issues by clinic</h2>
+      {% if stats.by_clinic %}
+        <ul class="bars">
+          {% for row in stats.by_clinic %}
+            {{ bar(row.clinic, row.count, clinic_max, "/issues?clinic=" ~ (row.clinic | urlencode)) }}
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">No issues recorded yet.</p>
+      {% endif %}
+    </section>
+  </div>
+{% endblock %}

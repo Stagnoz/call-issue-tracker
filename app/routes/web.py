@@ -3,7 +3,7 @@
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -93,6 +93,7 @@ def issue_list(request: Request, session: SessionDep) -> HTMLResponse:
         "statuses": list(Status),
         "severities": list(Severity),
         "page_query": lambda number: filter_query(params, page=number),
+        "return_query": filter_query(params, page=params.page if params.page > 1 else None),
         "notice": list_notice(request),
         "filter_error": filter_error,
     }
@@ -170,3 +171,36 @@ def create_issue_from_form(
     issue = services.create_issue(session, data)
     # Post/Redirect/Get: reloading the list page cannot submit the form again.
     return RedirectResponse(f"/issues?created={issue.id}", status_code=303)
+
+
+@router.post("/issues/{issue_id}/resolve")
+def resolve_issue_from_form(
+    request: Request,
+    issue_id: int,
+    session: SessionDep,
+    return_query: Annotated[str, Form()] = "",
+) -> Response:
+    issue = services.resolve_issue(session, issue_id)
+    if issue is None:
+        context = {"message": f"Issue #{issue_id} does not exist."}
+        return render(request, "not_found.html", context, status_code=404)
+
+    # Back to the same filtered list. The query is rebuilt from known keys only
+    # and the path is fixed, so the form cannot redirect anywhere else.
+    submitted = parse_qs(return_query)
+    kept = [(key, submitted[key][0]) for key in (*FILTER_FIELDS, "page") if key in submitted]
+    query = urlencode([*kept, ("resolved", issue.id)])
+    return RedirectResponse(f"/issues?{query}", status_code=303)
+
+
+@router.get("/dashboard")
+def dashboard(request: Request, session: SessionDep) -> HTMLResponse:
+    stats = services.get_stats(session)
+    context = {
+        "active": "dashboard",
+        "stats": stats,
+        # Bars are scaled to the biggest bar in each chart (1 avoids dividing by zero).
+        "category_max": max((row.count for row in stats.by_category), default=0) or 1,
+        "clinic_max": max((row.count for row in stats.by_clinic), default=0) or 1,
+    }
+    return render(request, "dashboard.html", context)

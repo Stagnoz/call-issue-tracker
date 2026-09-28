@@ -53,6 +53,7 @@
             <th scope="col">Severity</th>
             <th scope="col">Status</th>
             <th scope="col">Description</th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
           </tr>
         </thead>
         <tbody>
@@ -75,6 +76,14 @@
                 {% endif %}
               </td>
               <td data-label="Description" class="description">{{ issue.description }}</td>
+              <td class="actions">
+                {% if issue.status == "open" %}
+                  <form method="post" action="/issues/{{ issue.id }}/resolve">
+                    <input type="hidden" name="return_query" value="{{ return_query }}">
+                    <button class="button button-small button-secondary" type="submit">Mark as resolved</button>
+                  </form>
+                {% endif %}
+              </td>
             </tr>
           {% endfor %}
         </tbody>
