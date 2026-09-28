@@ -35,6 +35,7 @@ def test_call_id_format_is_enforced(client, call_id):
     [
         "Centro Medico Portalba - Milano",
         "Studio Dentistico D'Angelo",
+        "Studio Dentistico D’Angelo",
         "Poliambulatorio S. Anna (Sede 2)",
         "Città della Salute & Benessere",
         "Centro Diagnostico Nord/Est",

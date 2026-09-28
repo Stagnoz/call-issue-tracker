@@ -11,7 +11,8 @@ from app.models import Category, Severity, Status
 
 # Format rules for the free-text fields.
 CALL_ID_PATTERN = re.compile(r"[A-Za-z0-9._:-]+")
-# Letters (accented ones too), digits, spaces and a little punctuation.
+# Letters (accented ones too), digits, spaces and a little punctuation,
+# including the typographic apostrophe used by phones and word processors.
 CLINIC_PATTERN = re.compile(r"(?:[^\W_]|[ .,'’()&/-])+")
 
 # Personal data that must never be stored in an issue (GDPR: health context).
