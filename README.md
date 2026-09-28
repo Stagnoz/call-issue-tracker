@@ -30,6 +30,10 @@ is needed.
 - **Mark as resolved**: each open issue has a button that opens a small form with an
   optional "What was fixed?" note. Resolved issues show the time, the note and a
   **Reopen** button. You stay on the same filtered list.
+- **Delete**: every issue has a Delete button that asks why (for example a duplicate
+  or an issue created by mistake). The issue disappears from the list, the filters,
+  the CSV and the dashboard, and the confirmation has an **Undo** button. Nothing is
+  removed from the database (soft delete).
 - **New issue** (`/issues/new`): call ID, clinic (pick an existing one or type a new
   name), category, severity and description. Invalid input is shown next to the
   field, with what you typed preserved.
@@ -77,7 +81,7 @@ app/
   db.py              engine, sessions, UTC datetime column type
   models.py          Clinic and Issue tables, Category/Severity/Status enums
   schemas.py         Pydantic input validation and API output models
-  services.py        every query and rule: create, list, resolve, reopen, stats
+  services.py        every query and rule: create, list, resolve, reopen, delete, stats
   routes/api.py      JSON API, /health and self-hosted /docs
   routes/web.py      HTML pages, language switch and CSV export
   i18n.py            English and Italian UI text, date and duration formatting
@@ -110,6 +114,8 @@ collapsed, case-folded).
 | `created_at` | UTC datetime | set by the server, never by the client |
 | `resolved_at` | UTC datetime, nullable | set when resolved, cleared on reopen |
 | `resolution_note` | text, 0-500, nullable | optional "what was fixed" |
+| `deleted_at` | UTC datetime, nullable | set when deleted, cleared on restore; deleted issues are hidden everywhere |
+| `deletion_reason` | text, 3-500, nullable | required when deleting |
 
 Enums are stored as text with a `CHECK` constraint, so the database itself rejects
 invalid values.
@@ -155,12 +161,14 @@ with the list of errors. The API is always in English.
 | `GET` | `/api/issues/{id}` | One issue, or 404. |
 | `POST` | `/api/issues/{id}/resolve` | Resolve. Optional body `{"note": "..."}`. Idempotent: a second call changes nothing. |
 | `POST` | `/api/issues/{id}/reopen` | Back to open; clears `resolved_at` and the note. Idempotent. |
+| `POST` | `/api/issues/{id}/delete` | Soft delete. Required body `{"reason": "..."}`; returns 204. The issue is hidden (GET returns 404) but kept. Idempotent: the first reason is kept. |
+| `POST` | `/api/issues/{id}/restore` | Undo a delete; the issue comes back unchanged. Idempotent. |
 | `GET` | `/api/stats` | Dashboard numbers. |
 | `GET` | `/health` | `{"status": "ok"}` after a `SELECT 1`; 503 if the database is unreachable. |
 
 HTML-only routes: `/issues`, `/issues/new`, `/issues.csv`, `/dashboard`, and the
 `POST` form targets `/issues`, `/issues/{id}/resolve`, `/issues/{id}/reopen`,
-`/language`.
+`/issues/{id}/delete`, `/issues/{id}/restore`, `/language`.
 
 Example:
 
@@ -208,7 +216,8 @@ test below by hand, or read them in `.github/workflows/ci.yml`.
 Each test builds its own app on a temporary SQLite file, never the real database, and
 anything time-related uses a fixed "now". The suite covers creation and validation
 (including the input checks), ordering and pagination, each filter and their
-combinations, search, resolve/reopen and notes, all dashboard numbers, CSV export,
+combinations, search, resolve/reopen and notes, delete/restore (deleted issues left
+out of every list and number), all dashboard numbers, CSV export,
 seeding, persistence across a new engine and a new app instance, the HTML pages and
 forms (including escaping of `<script>` in descriptions and redirect safety), and the
 Italian interface.
@@ -236,9 +245,13 @@ every push to `develop`:
   loaded: no CDN, no web fonts, and Swagger UI is shipped with the app, so it all
   works offline.
 - **`create_all()` instead of migrations.** Tables are created at startup if missing.
-  It does not alter existing tables: adding `resolution_note` during development meant
-  resetting the local database. Before the next schema change, or before production,
-  I would add Alembic.
+  It does not alter existing tables: adding `resolution_note` and the delete columns
+  during development meant resetting the local database. Before production I would
+  add Alembic.
+- **Soft delete instead of removing rows.** Deleting keeps the row with a required
+  reason and hides it everywhere, so a mistaken delete can be undone and the history
+  of what was recorded is not lost. It is a `POST .../delete` action rather than an
+  HTTP `DELETE`, so the reason travels in a body and not in the URL.
 - **Resolve as `POST /api/issues/{id}/resolve`, not a generic `PATCH`.** HTML forms
   can only send GET and POST, and resolving is an action with a rule (set
   `resolved_at` once, idempotent) rather than an arbitrary field update. State never
@@ -250,7 +263,7 @@ every push to `develop`:
 - **Patient-data hint plus server checks**, explained under Data model.
 - **The Docker smoke test** is the most important CI job: it exercises exactly what a
   reviewer does after cloning.
-- **Italian interface** from a hand-written dictionary (under 100 strings) rather than
+- **Italian interface** from a hand-written dictionary (about 100 strings) rather than
   gettext: no extra dependency or compile step at this size. Stored data, the CSV and
   the JSON API are not translated.
 
