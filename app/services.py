@@ -6,18 +6,28 @@ interfaces cannot drift apart.
 
 import math
 import statistics
+from collections import Counter
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta, tzinfo
 
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 
-from app.models import Category, Clinic, Issue, Status
-from app.schemas import CategoryCount, ClinicCount, IssueCreate, IssueFilters, Stats
+from app.models import Category, Clinic, Issue, Severity, Status
+from app.schemas import (
+    CategoryCount,
+    ClinicCount,
+    DayCount,
+    IssueCreate,
+    IssueFilters,
+    SeverityCount,
+    Stats,
+)
 
 PER_PAGE = 25
+DAILY_WINDOW_DAYS = 30
 
 
 @dataclass
@@ -152,9 +162,10 @@ def database_is_reachable(session: Session) -> bool:
     return True
 
 
-def get_stats(session: Session) -> Stats:
-    """Dashboard numbers. Every category appears, with 0 if it has no issues.
-    Both breakdowns are sorted by count descending, ties alphabetically."""
+def get_stats(session: Session, now: datetime | None = None, tz: tzinfo = UTC) -> Stats:
+    """Dashboard numbers. Every category and severity appears, with 0 if it has
+    no issues. Category and clinic breakdowns are sorted by count descending,
+    ties alphabetically. Days for the daily counts are calendar days in tz."""
     total = session.scalar(select(func.count(Issue.id))) or 0
     open_count = (
         session.scalar(select(func.count(Issue.id)).where(Issue.status == Status.OPEN)) or 0
@@ -188,6 +199,31 @@ def get_stats(session: Session) -> Stats:
     ]
     median_hours = statistics.median(hours_to_resolve) if hours_to_resolve else None
 
+    severity_rows = session.execute(
+        select(Issue.severity, func.count(Issue.id))
+        .where(Issue.status == Status.OPEN)
+        .group_by(Issue.severity)
+    )
+    open_counts = {severity: count for severity, count in severity_rows}
+    open_by_severity = [
+        SeverityCount(severity=severity, label=severity.label, count=open_counts.get(severity, 0))
+        for severity in reversed(Severity)
+    ]
+    open_critical_or_high = open_counts.get(Severity.CRITICAL, 0) + open_counts.get(
+        Severity.HIGH, 0
+    )
+
+    # Issues created per local day over the last DAILY_WINDOW_DAYS days, today included.
+    today = (now or utc_now()).astimezone(tz).date()
+    first_day = today - timedelta(days=DAILY_WINDOW_DAYS - 1)
+    window_start = datetime.combine(first_day, time.min, tzinfo=tz)
+    created = session.scalars(select(Issue.created_at).where(Issue.created_at >= window_start))
+    per_day = Counter(created_at.astimezone(tz).date() for created_at in created)
+    created_per_day = [
+        DayCount(day=day, count=per_day.get(day, 0))
+        for day in (first_day + timedelta(days=offset) for offset in range(DAILY_WINDOW_DAYS))
+    ]
+
     return Stats(
         total=total,
         open=open_count,
@@ -195,4 +231,7 @@ def get_stats(session: Session) -> Stats:
         median_resolution_hours=median_hours,
         by_category=by_category,
         by_clinic=by_clinic,
+        open_by_severity=open_by_severity,
+        open_critical_or_high=open_critical_or_high,
+        created_per_day=created_per_day,
     )

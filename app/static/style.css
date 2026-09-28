@@ -531,7 +531,7 @@ textarea:focus {
 
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: 1rem;
   margin-bottom: 1.25rem;
 }
@@ -558,6 +558,14 @@ textarea:focus {
 
 .stat-highlight {
   border-top: 4px solid var(--brand);
+}
+
+.stat-alert {
+  border-top: 4px solid var(--danger);
+}
+
+.stat-alert .stat-value {
+  color: var(--danger);
 }
 
 .dashboard-grid {
@@ -599,6 +607,53 @@ textarea:focus {
   border-radius: 999px;
 }
 
+.bar-fill-critical {
+  background: var(--danger);
+}
+
+.bar-fill-high {
+  background: var(--warning);
+}
+
+.bar-fill-low {
+  background: #98a2b3;
+}
+
+.chart-caption {
+  margin: -0.75rem 0 1rem;
+}
+
+.daily-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 8rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-bottom: 1px solid var(--sky-border);
+}
+
+.daily-chart li {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+
+.daily-bar {
+  width: 100%;
+  min-height: 2px;
+  background: var(--brand);
+  border-radius: 3px 3px 0 0;
+}
+
+.daily-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.35rem;
+}
+
 .bar-count {
   text-align: right;
   font-weight: 700;
@@ -615,6 +670,10 @@ textarea:focus {
 
   .stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stat-grid .stat:last-child {
+    grid-column: 1 / -1;
   }
 
   .stat-value {

@@ -2,7 +2,7 @@
 
 import re
 import unicodedata
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_core import PydanticCustomError
@@ -185,6 +185,17 @@ class ClinicCount(BaseModel):
     count: int
 
 
+class SeverityCount(BaseModel):
+    severity: Severity
+    label: str
+    count: int
+
+
+class DayCount(BaseModel):
+    day: date
+    count: int
+
+
 class Stats(BaseModel):
     total: int
     open: int
@@ -193,3 +204,8 @@ class Stats(BaseModel):
     median_resolution_hours: float | None
     by_category: list[CategoryCount]
     by_clinic: list[ClinicCount]
+    # Open issues only, critical first: what to fix next.
+    open_by_severity: list[SeverityCount]
+    open_critical_or_high: int
+    # One entry per local calendar day, oldest first, today last.
+    created_per_day: list[DayCount]

@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
 
-{% macro bar(label, count, max_count, href) -%}
+{% macro bar(label, count, max_count, href, variant="") -%}
   <li class="bar-row">
     <a class="bar-label" href="{{ href }}">{{ label }}</a>
     <div class="bar-track" aria-hidden="true">
-      <div class="bar-fill" style="width: {{ (count / max_count * 100) | round(1) }}%"></div>
+      <div class="bar-fill{% if variant %} bar-fill-{{ variant }}{% endif %}" style="width: {{ (count / max_count * 100) | round(1) }}%"></div>
     </div>
     <span class="bar-count">{{ count }}</span>
   </li>
@@ -28,6 +28,10 @@
       <span class="stat-label">Open issues</span>
       <span class="stat-value">{{ stats.open }}</span>
     </p>
+    <p class="card stat stat-alert">
+      <span class="stat-label">Open critical or high</span>
+      <span class="stat-value">{{ stats.open_critical_or_high }}</span>
+    </p>
     <p class="card stat">
       <span class="stat-label">Resolved</span>
       <span class="stat-value">{{ stats.resolved }}</span>
@@ -41,6 +45,32 @@
   </div>
 
   <div class="dashboard-grid">
+    <section class="card" aria-labelledby="by-severity">
+      <h2 id="by-severity">Open issues by severity</h2>
+      <ul class="bars">
+        {% for row in stats.open_by_severity %}
+          {{ bar(row.label, row.count, severity_max, "/issues?status=open&severity=" ~ row.severity.value, row.severity.value) }}
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="card" aria-labelledby="per-day">
+      <h2 id="per-day">Issues created per day</h2>
+      <p class="muted small chart-caption">Last {{ stats.created_per_day | length }} days</p>
+      <ol class="daily-chart">
+        {% for row in stats.created_per_day %}
+          <li title="{{ row.day | short_date }}: {{ row.count }}">
+            <span class="daily-bar" style="height: {{ (row.count / daily_max * 100) | round(1) }}%"></span>
+            <span class="visually-hidden">{{ row.day | short_date }}: {{ row.count }}</span>
+          </li>
+        {% endfor %}
+      </ol>
+      <div class="daily-axis muted small" aria-hidden="true">
+        <span>{{ stats.created_per_day[0].day | short_date }}</span>
+        <span>{{ stats.created_per_day[-1].day | short_date }}</span>
+      </div>
+    </section>
+
     <section class="card" aria-labelledby="by-category">
       <h2 id="by-category">Issues by category</h2>
       <ul class="bars">

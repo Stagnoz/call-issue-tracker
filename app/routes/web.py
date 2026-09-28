@@ -1,7 +1,7 @@
 """HTML pages. They call the same service functions as the JSON API."""
 
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import parse_qs, urlencode
@@ -41,7 +41,13 @@ def duration(hours: float) -> str:
     return f"{days} d {rest} h" if rest else f"{days} d"
 
 
+def short_date(value: date) -> str:
+    """'28 Sep'."""
+    return f"{value.day} {value:%b}"
+
+
 templates.env.filters["local_time"] = local_time
+templates.env.filters["short_date"] = short_date
 templates.env.filters["duration"] = duration
 
 # HTML pages are not part of the API, so they stay out of /docs.
@@ -268,12 +274,14 @@ def reopen_issue_from_form(
 
 @router.get("/dashboard")
 def dashboard(request: Request, session: SessionDep) -> HTMLResponse:
-    stats = services.get_stats(session)
+    stats = services.get_stats(session, tz=request.app.state.settings.timezone)
     context = {
         "active": "dashboard",
         "stats": stats,
         # Bars are scaled to the biggest bar in each chart (1 avoids dividing by zero).
         "category_max": max((row.count for row in stats.by_category), default=0) or 1,
         "clinic_max": max((row.count for row in stats.by_clinic), default=0) or 1,
+        "severity_max": max((row.count for row in stats.open_by_severity), default=0) or 1,
+        "daily_max": max((row.count for row in stats.created_per_day), default=0) or 1,
     }
     return render(request, "dashboard.html", context)

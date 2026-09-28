@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
@@ -106,10 +106,12 @@ def reopen_issue(issue_id: int, session: SessionDep) -> Issue:
     response_model=Stats,
     tags=["stats"],
     summary="Dashboard statistics",
-    description="Total and open issues, issues by category (including zero counts) and by clinic.",
+    description="Total, open and resolved issues, median time to resolution, issues by "
+    "category (including zero counts) and by clinic, open issues by severity, and issues "
+    "created per day over the last 30 days (days in APP_TIMEZONE).",
 )
-def get_stats(session: SessionDep) -> Stats:
-    return services.get_stats(session)
+def get_stats(request: Request, session: SessionDep) -> Stats:
+    return services.get_stats(session, tz=request.app.state.settings.timezone)
 
 
 @router.get(
